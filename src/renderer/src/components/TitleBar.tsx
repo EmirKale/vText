@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Moon, Sun, Monitor, Maximize2, Minimize2, FileText } from 'lucide-react';
+import { VTextLogo } from './VTextLogo';
 
 export const TitleBar: React.FC = () => {
   const { tabs, activeTabId, viewMode, setViewMode, isFocusMode, toggleFocusMode, settings, updateSettings } = useAppStore();
@@ -23,10 +24,7 @@ export const TitleBar: React.FC = () => {
     <div className="h-[38px] flex items-center justify-between px-3 select-none border-b border-border-light dark:border-border-dark bg-canvas-light dark:bg-canvas-dark text-xs text-content-mutedLight dark:text-content-mutedDark z-50">
       {/* Brand & Active Document Name */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 font-semibold text-content-light dark:text-content-dark">
-          <span className="w-2.5 h-2.5 rounded-full bg-accent inline-block"></span>
-          <span>Kalem</span>
-        </div>
+        <VTextLogo size={18} showText={true} textSize="text-xs" />
         <span className="text-border-light dark:text-border-dark">/</span>
         <span className="font-medium text-content-light dark:text-content-dark truncate max-w-[240px]">
           {activeTab ? activeTab.title : 'Yeni Belge'}

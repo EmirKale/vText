@@ -24,8 +24,8 @@ function getHeaders(): Record<string, string> {
   }
   return {
     'Authorization': `Bearer ${key}`,
-    'HTTP-Referer': 'https://kalem.local',
-    'X-Title': 'Kalem',
+    'HTTP-Referer': 'https://vtext.local',
+    'X-Title': 'vText',
     'Content-Type': 'application/json'
   };
 }

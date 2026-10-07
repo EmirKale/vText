@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Settings, X, Key, Check, AlertCircle, Loader2, RefreshCw, Cpu, Monitor, FileCode, CheckCircle2, XCircle, DownloadCloud, ArrowUpCircle, GitBranch } from 'lucide-react';
 import { OpenRouterModel, UpdateStatusData } from '../../../shared/types';
+import { VTextLogo } from './VTextLogo';
 
 export const SettingsModal: React.FC = () => {
   const { isSettingsOpen, setSettingsOpen, settings, updateSettings } = useAppStore();
@@ -143,8 +144,9 @@ export const SettingsModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-light dark:border-border-dark bg-canvas-light/50 dark:bg-canvas-dark/50">
           <div className="flex items-center gap-2 font-semibold text-sm">
-            <Settings className="w-4 h-4 text-accent" />
-            <span>Uygulama Ayarları</span>
+            <VTextLogo size={18} showText={true} />
+            <span className="text-content-mutedLight dark:text-content-mutedDark font-normal">|</span>
+            <span>Ayarlar</span>
           </div>
           <button
             onClick={() => setSettingsOpen(false)}

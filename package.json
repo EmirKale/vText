@@ -1,9 +1,9 @@
 {
-  "name": "kalem",
+  "name": "vtext",
   "version": "1.0.0",
-  "description": "Windows için Yerel Yapay Zeka Destekli Belge Editörü",
+  "description": "vText - Windows için Yeni Nesil Yapay Zeka Destekli Belge Editörü",
   "main": "./out/main/index.js",
-  "author": "Kalem",
+  "author": "EmirKale",
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -62,8 +62,8 @@
     "vite": "^5.4.10"
   },
   "build": {
-    "appId": "com.kalem.editor",
-    "productName": "Kalem",
+    "appId": "com.vtext.editor",
+    "productName": "vText",
     "directories": {
       "output": "dist"
     },
@@ -75,32 +75,33 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Kalem"
+      "shortcutName": "vText"
     },
     "fileAssociations": [
       {
         "ext": "docx",
         "name": "Microsoft Word Belgesi",
-        "description": "Word Belgesini Kalem ile Aç",
+        "description": "Word Belgesini vText ile Aç",
         "role": "Editor"
       },
       {
         "ext": "md",
         "name": "Markdown Belgesi",
-        "description": "Markdown Belgesini Kalem ile Aç",
+        "description": "Markdown Belgesini vText ile Aç",
         "role": "Editor"
       },
       {
         "ext": "txt",
         "name": "Metin Belgesi",
-        "description": "Metin Belgesini Kalem ile Aç",
+        "description": "Metin Belgesini vText ile Aç",
         "role": "Editor"
       }
     ],

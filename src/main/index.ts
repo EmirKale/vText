@@ -55,7 +55,8 @@ function createWindow(): void {
     y: savedBounds?.y,
     minWidth: 800,
     minHeight: 600,
-    title: 'Kalem',
+    title: 'vText',
+    icon: path.join(__dirname, '../../resources/icon.png'),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: nativeTheme.shouldUseDarkColors ? '#17181B' : '#F5F5F4',

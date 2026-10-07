@@ -6,7 +6,7 @@ let inMemoryApiKey: string | null = null;
 let importedFromPlaintext: boolean = false;
 
 function getAppDataDir(): string {
-  const dir = path.join(app.getPath('appData'), 'Kalem');
+  const dir = path.join(app.getPath('appData'), 'vText');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -20,11 +20,14 @@ function getEncryptedKeyPath(): string {
 export function getApiKey(): string | null {
   if (inMemoryApiKey) return inMemoryApiKey;
 
-  // 1. Try reading encrypted key from %APPDATA%/Kalem/key.enc
+  // 1. Try reading encrypted key from %APPDATA%/vText/key.enc or fallback
   const encPath = getEncryptedKeyPath();
-  if (fs.existsSync(encPath)) {
+  const fallbackEncPath = path.join(app.getPath('appData'), 'Kalem', 'key.enc');
+  const targetEncPath = fs.existsSync(encPath) ? encPath : fs.existsSync(fallbackEncPath) ? fallbackEncPath : null;
+
+  if (targetEncPath) {
     try {
-      const encryptedBuffer = fs.readFileSync(encPath);
+      const encryptedBuffer = fs.readFileSync(targetEncPath);
       if (safeStorage.isEncryptionAvailable()) {
         inMemoryApiKey = safeStorage.decryptString(encryptedBuffer).trim();
         return inMemoryApiKey;
@@ -38,7 +41,8 @@ export function getApiKey(): string | null {
   const candidateDirs = [
     process.cwd(),
     path.dirname(process.execPath),
-    getAppDataDir()
+    getAppDataDir(),
+    path.join(app.getPath('appData'), 'Kalem')
   ];
   const candidateFiles = ['openrouterkey.txt', 'key.txt'];
 

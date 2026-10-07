@@ -7,7 +7,7 @@ import { DocumentFormat, FileOpenResult, FileSaveResult } from '../shared/types'
 import { convertWithPandocOrLibreOffice } from './convert';
 
 export function getAssetsDir(): string {
-  const dir = path.join(app.getPath('appData'), 'Kalem', 'assets');
+  const dir = path.join(app.getPath('appData'), 'vText', 'assets');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -15,23 +15,28 @@ export function getAssetsDir(): string {
 }
 
 export function registerKalemAssetProtocol(): void {
-  protocol.handle('kalem-asset', async (request) => {
+  const handleAsset = async (request: Request) => {
     try {
-      // url looks like: kalem-asset://filename.png or kalem-asset://uuid.png
       const parsedUrl = new URL(request.url);
       const filename = parsedUrl.hostname ? `${parsedUrl.hostname}${parsedUrl.pathname}` : parsedUrl.pathname.replace(/^\//, '');
       const safeFilename = path.basename(filename);
       const filePath = path.join(getAssetsDir(), safeFilename);
+      const fallbackPath = path.join(app.getPath('appData'), 'Kalem', 'assets', safeFilename);
 
-      if (!fs.existsSync(filePath)) {
+      const targetPath = fs.existsSync(filePath) ? filePath : fs.existsSync(fallbackPath) ? fallbackPath : null;
+
+      if (!targetPath) {
         return new Response('Not Found', { status: 404 });
       }
 
-      return net.fetch(`file://${filePath}`);
+      return net.fetch(`file://${targetPath}`);
     } catch {
       return new Response('Error', { status: 500 });
     }
-  });
+  };
+
+  protocol.handle('vtext-asset', handleAsset);
+  protocol.handle('kalem-asset', handleAsset);
 }
 
 export async function saveAssetImage(dataUrl: string): Promise<{ assetUrl: string; filePath: string }> {
