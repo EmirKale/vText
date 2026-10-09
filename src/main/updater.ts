@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import Store from 'electron-store';
 import { UpdateStatusData } from '../shared/types';
 
