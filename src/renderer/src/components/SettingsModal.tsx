@@ -1,8 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Settings, X, Key, Check, AlertCircle, Loader2, RefreshCw, Cpu, Monitor, FileCode, CheckCircle2, XCircle, DownloadCloud, ArrowUpCircle, GitBranch } from 'lucide-react';
+import {
+  Key,
+  Check,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Cpu,
+  FileCode,
+  CheckCircle2,
+  XCircle,
+  ArrowUpCircle,
+  GitBranch,
+  Settings2
+} from 'lucide-react';
 import { OpenRouterModel, UpdateStatusData } from '../../../shared/types';
-import { VTextLogo } from './VTextLogo';
+import { Modal } from './ui/Modal';
+import { applyTheme } from '../lib/theme';
 
 export const SettingsModal: React.FC = () => {
   const { isSettingsOpen, setSettingsOpen, settings, updateSettings } = useAppStore();
@@ -35,7 +49,10 @@ export const SettingsModal: React.FC = () => {
     const unsub = window.kalem.updater.onStatus((data) => {
       setCurrentUpdateStatus(data);
       if (data.status === 'downloaded') {
-        setUpdateFeedback({ type: 'success', message: `Yeni sürüm hazır (v${data.version || ''})! Yüklemek için yeniden başlatın.` });
+        setUpdateFeedback({
+          type: 'success',
+          message: `Yeni sürüm hazır (v${data.version || ''})! Yüklemek için yeniden başlatın.`
+        });
       } else if (data.status === 'downloading') {
         setUpdateFeedback({ type: 'info', message: `İndiriliyor: %${data.percent ?? 0}` });
       } else if (data.status === 'not-available') {
@@ -50,19 +67,17 @@ export const SettingsModal: React.FC = () => {
   const loadSettingsAndModels = async () => {
     if (!window.kalem) return;
 
-    // Load current settings
     const current = await window.kalem.settings.get();
     updateSettings(current);
     setUpdateRepoInput(current.updateRepo || '');
 
-    // Load live models from OpenRouter
     setIsLoadingModels(true);
     try {
       const models = await window.kalem.ai.getModels();
       setTextModels(models.textModels || []);
       setImageModels(models.imageModels || []);
     } catch {
-      // Fallback defaults already handled in main
+      // Fallbacks handled in main
     } finally {
       setIsLoadingModels(false);
     }
@@ -88,7 +103,7 @@ export const SettingsModal: React.FC = () => {
       if (res.valid) {
         setKeyTestResult({
           valid: true,
-          message: `Bağlantı Başarılı! Kalan / Harcanan: $${(res.usage || 0).toFixed(4)}`
+          message: `Bağlantı başarılı! Kalan / Harcanan: $${(res.usage || 0).toFixed(4)}`
         });
       } else {
         setKeyTestResult({ valid: false, message: res.error || 'Bağlantı kurulamadı.' });
@@ -126,11 +141,14 @@ export const SettingsModal: React.FC = () => {
 
   const handleSaveRepo = () => {
     handleSettingChange('updateRepo', updateRepoInput.trim());
-    setUpdateFeedback({ type: 'success', message: 'GitHub deposu başarıyla kaydedildi.' });
+    setUpdateFeedback({ type: 'success', message: 'GitHub deposu kaydedildi.' });
   };
 
   const handleSettingChange = (field: keyof typeof settings, val: any) => {
     updateSettings({ [field]: val });
+    if (field === 'theme') {
+      applyTheme(val);
+    }
     if (window.kalem) {
       window.kalem.settings.save({ [field]: val });
     }
@@ -139,308 +157,303 @@ export const SettingsModal: React.FC = () => {
   if (!isSettingsOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="w-[620px] max-w-full max-h-[90vh] bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-content-light dark:text-content-dark">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-light dark:border-border-dark bg-canvas-light/50 dark:bg-canvas-dark/50">
-          <div className="flex items-center gap-2 font-semibold text-sm">
-            <VTextLogo size={18} showText={true} />
-            <span className="text-content-mutedLight dark:text-content-mutedDark font-normal">|</span>
-            <span>Ayarlar</span>
+    <Modal
+      open={isSettingsOpen}
+      onClose={() => setSettingsOpen(false)}
+      width={620}
+      icon={
+        <div className="w-8 h-8 rounded-xl bg-ink/[0.08] text-ink grid place-items-center">
+          <Settings2 className="w-4 h-4" />
+        </div>
+      }
+      title="Ayarlar"
+      description="Yapay zekâ anahtarları, model seçimleri, tema ve belge tercihleri."
+      footer={
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(false)}
+          className="btn-primary"
+        >
+          Tamam
+        </button>
+      }
+    >
+      <div className="space-y-4">
+        {/* OpenRouter API Key Section */}
+        <div className="p-4 rounded-xl border border-line bg-chrome/30 space-y-3">
+          <div className="flex items-center justify-between font-semibold text-ui">
+            <div className="flex items-center gap-1.5 text-ink">
+              <Key className="w-4 h-4 text-accent" />
+              <span>OpenRouter API Anahtarı</span>
+            </div>
+            {settings.hasApiKey ? (
+              <span className="flex items-center gap-1 text-2xs text-success font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Aktif ({settings.maskedApiKey})</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-2xs text-danger font-medium">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Tanımlanmadı</span>
+              </span>
+            )}
           </div>
-          <button
-            onClick={() => setSettingsOpen(false)}
-            className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-content-mutedLight dark:text-content-mutedDark"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              placeholder={settings.hasApiKey ? 'Yeni anahtar yapıştırın…' : 'sk-or-v1-…'}
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              className="field flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleSaveApiKey}
+              disabled={!apiKeyInput.trim()}
+              className="btn-primary h-9 px-3"
+            >
+              Kaydet
+            </button>
+            <button
+              type="button"
+              onClick={handleTestKey}
+              disabled={isTestingKey || !settings.hasApiKey}
+              className="btn-outline h-9 px-3"
+            >
+              {isTestingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+              <span>Test Et</span>
+            </button>
+          </div>
+
+          {keyTestResult && (
+            <div
+              className={`p-2.5 rounded-lg text-2xs flex items-center gap-2 ${
+                keyTestResult.valid
+                  ? 'bg-success/10 text-success border border-success/20'
+                  : 'bg-danger/10 text-danger border border-danger/20'
+              }`}
+            >
+              {keyTestResult.valid ? <Check className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+              <span>{keyTestResult.message}</span>
+            </div>
+          )}
         </div>
 
-        {/* Body */}
-        <div className="p-5 overflow-y-auto space-y-5 text-xs flex-1">
-          {/* OpenRouter API Key Section */}
-          <div className="p-4 rounded-xl border border-border-light dark:border-border-dark bg-canvas-light/30 dark:bg-canvas-dark/30 space-y-3">
-            <div className="flex items-center justify-between font-semibold">
-              <div className="flex items-center gap-1.5 text-accent">
-                <Key className="w-4 h-4" />
-                <span>OpenRouter API Anahtarı</span>
-              </div>
-              {settings.hasApiKey ? (
-                <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Aktif ({settings.maskedApiKey})</span>
-                </span>
+        {/* Model Selection */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="flex items-center justify-between mb-1.5 font-medium text-ui">
+              <span className="flex items-center gap-1.5 text-ink">
+                <Cpu className="w-3.5 h-3.5 text-accent" />
+                <span>Metin Modeli</span>
+              </span>
+              {isLoadingModels && <Loader2 className="w-3 h-3 animate-spin text-accent" />}
+            </div>
+            <select
+              value={settings.textModel}
+              onChange={(e) => handleSettingChange('textModel', e.target.value)}
+              className="field"
+            >
+              {textModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name || m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5 font-medium text-ui">
+              <span className="flex items-center gap-1.5 text-ink">
+                <Cpu className="w-3.5 h-3.5 text-accent" />
+                <span>Görsel Modeli</span>
+              </span>
+            </div>
+            <select
+              value={settings.imageModel}
+              onChange={(e) => handleSettingChange('imageModel', e.target.value)}
+              className="field"
+            >
+              {imageModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name || m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Preferences */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="field-label">Uygulama Teması</label>
+            <select
+              value={settings.theme}
+              onChange={(e) => handleSettingChange('theme', e.target.value)}
+              className="field"
+            >
+              <option value="system">Sistem ile Senkronize</option>
+              <option value="light">Açık Tema (Doğal Kağıt)</option>
+              <option value="dark">Koyu Tema (Derin Mürekkep)</option>
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="field-label mb-0">Yazı Boyutu</label>
+              <span className="text-2xs font-mono text-muted">{settings.fontSize} px</span>
+            </div>
+            <input
+              type="range"
+              min="13"
+              max="22"
+              value={settings.fontSize}
+              onChange={(e) => handleSettingChange('fontSize', parseInt(e.target.value))}
+              className="w-full cursor-pointer accent-accent mt-2.5"
+            />
+          </div>
+        </div>
+
+        {/* External Tools (Pandoc & LibreOffice) */}
+        <div className="p-3.5 rounded-xl border border-line bg-chrome/20 space-y-2">
+          <span className="font-semibold text-ui text-ink flex items-center gap-1.5">
+            <FileCode className="w-4 h-4 text-accent" />
+            <span>Harici Dönüştürücüler</span>
+          </span>
+          <div className="grid grid-cols-2 gap-3 text-2xs">
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-paper border border-line">
+              {settings.hasPandoc ? (
+                <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
               ) : (
-                <span className="flex items-center gap-1 text-[11px] text-amber-500 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>Tanımlanmadı</span>
-                </span>
+                <XCircle className="w-4 h-4 text-muted shrink-0" />
               )}
+              <div>
+                <div className="font-medium text-ink">Pandoc</div>
+                <div className="text-muted">
+                  {settings.hasPandoc ? 'Yüklü (ODT & RTF desteği aktif)' : 'Yüklü değil'}
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-paper border border-line">
+              {settings.hasLibreOffice ? (
+                <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              ) : (
+                <XCircle className="w-4 h-4 text-muted shrink-0" />
+              )}
+              <div>
+                <div className="font-medium text-ink">LibreOffice</div>
+                <div className="text-muted">
+                  {settings.hasLibreOffice ? 'Yüklü (Eski .doc & ODT aktif)' : 'Yüklü değil'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sürüm ve Otomatik Güncelleme */}
+        <div className="p-4 rounded-xl border border-line bg-chrome/30 space-y-3">
+          <div className="flex items-center justify-between font-semibold text-ui">
+            <div className="flex items-center gap-1.5 text-ink">
+              <ArrowUpCircle className="w-4 h-4 text-accent" />
+              <span>Sürüm & Güncelleme</span>
+            </div>
+            <span className="text-2xs font-mono px-2 py-0.5 rounded bg-ink/[0.06] text-ink">
+              v{appVersion}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-2xs text-muted leading-relaxed">
+              Yeni sürüm yayınlandığında arka planda indirilip onayınızla uygulanır.
+            </p>
+            <button
+              type="button"
+              onClick={handleCheckUpdates}
+              disabled={isCheckingUpdate}
+              className="btn-outline h-8 px-3 shrink-0 text-ui"
+            >
+              {isCheckingUpdate ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              <span>Denetle</span>
+            </button>
+          </div>
+
+          {currentUpdateStatus?.status === 'downloaded' && (
+            <div className="p-2.5 rounded-lg bg-success/10 border border-success/20 text-success flex items-center justify-between">
+              <div className="flex items-center gap-2 text-2xs font-medium">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>Yeni sürüm indirildi (v{currentUpdateStatus.version}).</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallUpdate}
+                className="btn-primary h-7 px-2.5 text-2xs bg-success hover:bg-success/90"
+              >
+                Yeniden Başlat ve Yükle
+              </button>
+            </div>
+          )}
+
+          {updateFeedback && currentUpdateStatus?.status !== 'downloaded' && (
+            <div
+              className={`p-2.5 rounded-lg text-2xs flex items-center gap-2 ${
+                updateFeedback.type === 'success'
+                  ? 'bg-success/10 text-success border border-success/20'
+                  : updateFeedback.type === 'error'
+                  ? 'bg-danger/10 text-danger border border-danger/20'
+                  : 'bg-accent/10 text-accent border border-accent/20'
+              }`}
+            >
+              {updateFeedback.type === 'success' ? (
+                <Check className="w-3.5 h-3.5 shrink-0" />
+              ) : updateFeedback.type === 'error' ? (
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <ArrowUpCircle className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>{updateFeedback.message}</span>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-line/60 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-2xs text-ink">
               <input
-                type="password"
-                placeholder={settings.hasApiKey ? 'Yeni anahtar yapıştırın veya değiştirin...' : 'sk-or-v1-...'}
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                className="flex-1 px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark outline-none focus:border-accent"
+                type="checkbox"
+                checked={settings.autoCheckUpdates !== false}
+                onChange={(e) => handleSettingChange('autoCheckUpdates', e.target.checked)}
+                className="rounded border-line text-accent focus:ring-0"
+              />
+              <span>Açılışta güncellemeleri otomatik denetle</span>
+            </label>
+
+            <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-1.5 text-muted shrink-0 text-2xs">
+                <GitBranch className="w-3.5 h-3.5" />
+                <span>GitHub Deposu:</span>
+              </div>
+              <input
+                type="text"
+                placeholder="örn: EmirKale/vText"
+                value={updateRepoInput}
+                onChange={(e) => setUpdateRepoInput(e.target.value)}
+                className="field h-8 flex-1 font-mono text-[11px]"
               />
               <button
-                onClick={handleSaveApiKey}
-                disabled={!apiKeyInput.trim()}
-                className="px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-40 transition-colors shadow-xs"
+                type="button"
+                onClick={handleSaveRepo}
+                className="btn-ghost h-8 px-2.5 text-2xs"
               >
                 Kaydet
               </button>
-              <button
-                onClick={handleTestKey}
-                disabled={isTestingKey || !settings.hasApiKey}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 transition-colors"
-              >
-                {isTestingKey ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                <span>Test Et</span>
-              </button>
-            </div>
-
-            {keyTestResult && (
-              <div
-                className={`p-2.5 rounded-lg text-[11px] flex items-center gap-2 ${
-                  keyTestResult.valid
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
-                }`}
-              >
-                {keyTestResult.valid ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-                <span>{keyTestResult.message}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Model Selection */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-1.5 font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-accent" />
-                  <span>Metin Modeli (Varsayılan: DeepSeek)</span>
-                </span>
-                {isLoadingModels && <Loader2 className="w-3 h-3 animate-spin text-accent" />}
-              </div>
-              <select
-                value={settings.textModel}
-                onChange={(e) => handleSettingChange('textModel', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-canvas-light dark:bg-canvas-dark outline-none cursor-pointer"
-              >
-                {textModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.id}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5 font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Görsel Modeli (Varsayılan: Seedream)</span>
-                </span>
-              </div>
-              <select
-                value={settings.imageModel}
-                onChange={(e) => handleSettingChange('imageModel', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-canvas-light dark:bg-canvas-dark outline-none cursor-pointer"
-              >
-                {imageModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.id}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
-
-          {/* Editor Preferences */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-medium mb-1.5">Varsayılan Tema</label>
-              <select
-                value={settings.theme}
-                onChange={(e) => handleSettingChange('theme', e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-border-light dark:border-border-dark bg-canvas-light dark:bg-canvas-dark outline-none cursor-pointer"
-              >
-                <option value="system">Sistem Teması ile Senkronize</option>
-                <option value="light">Açık Tema (Minimal Beyaz)</option>
-                <option value="dark">Koyu Tema (Göz Yormayan Siyah)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-medium mb-1.5">Yazı Boyutu ({settings.fontSize}px)</label>
-              <input
-                type="range"
-                min="13"
-                max="22"
-                value={settings.fontSize}
-                onChange={(e) => handleSettingChange('fontSize', parseInt(e.target.value))}
-                className="w-full cursor-pointer accent-accent mt-2"
-              />
-            </div>
-          </div>
-
-          {/* External Tools (Pandoc & LibreOffice) */}
-          <div className="p-3.5 rounded-xl border border-border-light dark:border-border-dark bg-canvas-light/20 dark:bg-canvas-dark/20 space-y-2">
-            <span className="font-semibold text-content-light dark:text-content-dark flex items-center gap-1.5">
-              <FileCode className="w-4 h-4 text-blue-500" />
-              <span>Harici Belge Dönüştürücü Durumu</span>
-            </span>
-            <div className="grid grid-cols-2 gap-3 text-[11px]">
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-                {settings.hasPandoc ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-content-mutedLight dark:text-content-mutedDark" />
-                )}
-                <div>
-                  <div className="font-medium">Pandoc</div>
-                  <div className="text-[10px] text-content-mutedLight dark:text-content-mutedDark">
-                    {settings.hasPandoc ? 'Yüklü (ODT & RTF desteği aktif)' : 'Yüklü değil'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark">
-                {settings.hasLibreOffice ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-content-mutedLight dark:text-content-mutedDark" />
-                )}
-                <div>
-                  <div className="font-medium">LibreOffice</div>
-                  <div className="text-[10px] text-content-mutedLight dark:text-content-mutedDark">
-                    {settings.hasLibreOffice ? 'Yüklü (Eski .doc & ODT aktif)' : 'Yüklü değil'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sürüm ve Otomatik Güncelleme */}
-          <div className="p-4 rounded-xl border border-border-light dark:border-border-dark bg-canvas-light/30 dark:bg-canvas-dark/30 space-y-3">
-            <div className="flex items-center justify-between font-semibold">
-              <div className="flex items-center gap-1.5 text-accent">
-                <ArrowUpCircle className="w-4 h-4" />
-                <span>Sürüm ve Otomatik Güncelleme</span>
-              </div>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/5 dark:bg-white/10 text-content-light dark:text-content-dark">
-                v{appVersion}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <div className="text-[11px] text-content-mutedLight dark:text-content-mutedDark">
-                Uygulama açıkken yeni sürüm yayınlandığında arka planda indirilip otomatik yüklenmeye hazır hale gelir.
-              </div>
-              <button
-                onClick={handleCheckUpdates}
-                disabled={isCheckingUpdate}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors shadow-xs shrink-0"
-              >
-                {isCheckingUpdate ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3.5 h-3.5" />
-                )}
-                <span>Güncellemeleri Denetle</span>
-              </button>
-            </div>
-
-            {/* If update downloaded */}
-            {currentUpdateStatus?.status === 'downloaded' && (
-              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[11px] font-medium">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Yeni sürüm indirildi (v{currentUpdateStatus.version}).</span>
-                </div>
-                <button
-                  onClick={handleInstallUpdate}
-                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors"
-                >
-                  Yeniden Başlat ve Yükle
-                </button>
-              </div>
-            )}
-
-            {/* Update Feedback Alert */}
-            {updateFeedback && currentUpdateStatus?.status !== 'downloaded' && (
-              <div
-                className={`p-2.5 rounded-lg text-[11px] flex items-center gap-2 ${
-                  updateFeedback.type === 'success'
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    : updateFeedback.type === 'error'
-                      ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                      : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
-                }`}
-              >
-                {updateFeedback.type === 'success' ? (
-                  <Check className="w-3.5 h-3.5 shrink-0" />
-                ) : updateFeedback.type === 'error' ? (
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                ) : (
-                  <ArrowUpCircle className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>{updateFeedback.message}</span>
-              </div>
-            )}
-
-            {/* GitHub Repo Configuration & Auto-check Toggle */}
-            <div className="pt-2 border-t border-border-light/60 dark:border-border-dark/60 space-y-2">
-              <div className="flex items-center justify-between text-[11px]">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoCheckUpdates !== false}
-                    onChange={(e) => handleSettingChange('autoCheckUpdates', e.target.checked)}
-                    className="rounded border-border-light dark:border-border-dark text-accent focus:ring-0"
-                  />
-                  <span>Uygulama açılışında güncellemeleri otomatik denetle</span>
-                </label>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex items-center gap-1.5 text-content-mutedLight dark:text-content-mutedDark shrink-0">
-                  <GitBranch className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">GitHub Deposu:</span>
-                </div>
-                <input
-                  type="text"
-                  placeholder="örn: kullaniciadi/vText"
-                  value={updateRepoInput}
-                  onChange={(e) => setUpdateRepoInput(e.target.value)}
-                  className="flex-1 px-2.5 py-1 text-[11px] rounded border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark outline-none focus:border-accent font-mono"
-                />
-                <button
-                  onClick={handleSaveRepo}
-                  className="px-2.5 py-1 rounded bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 text-[11px] font-medium transition-colors"
-                >
-                  Kaydet
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end px-5 py-3 border-t border-border-light dark:border-border-dark bg-canvas-light/30 dark:bg-canvas-dark/30 text-xs">
-          <button
-            onClick={() => setSettingsOpen(false)}
-            className="px-5 py-2 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors shadow-sm"
-          >
-            Tamam
-          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

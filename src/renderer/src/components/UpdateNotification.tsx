@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DownloadCloud, RefreshCw, CheckCircle2, X, AlertCircle, ArrowUpCircle } from 'lucide-react';
+import { RefreshCw, CheckCircle2, X, ArrowUpCircle } from 'lucide-react';
 import { UpdateStatusData } from '../../../shared/types';
 
 export const UpdateNotification: React.FC = () => {
@@ -12,7 +12,6 @@ export const UpdateNotification: React.FC = () => {
 
     const unsubscribe = window.kalem.updater.onStatus((data) => {
       setUpdateData(data);
-      // When a new download starts or completes, reopen banner if dismissed
       if (data.status === 'downloading' || data.status === 'downloaded') {
         setIsDismissed(false);
       }
@@ -23,7 +22,6 @@ export const UpdateNotification: React.FC = () => {
 
   if (isDismissed || !updateData) return null;
 
-  // Only show the floating banner for active downloading, downloaded, or available states
   if (
     updateData.status !== 'downloading' &&
     updateData.status !== 'downloaded' &&
@@ -39,80 +37,73 @@ export const UpdateNotification: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-10 right-6 z-50 max-w-sm w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl p-4 text-content-light dark:text-content-dark animate-in fade-in slide-in-from-bottom-5 duration-200">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-10 right-6 z-50 max-w-sm w-full bg-paper border border-line rounded-2xl shadow-modal p-4 text-ink animate-pop"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           {updateData.status === 'downloaded' ? (
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-xl bg-success/15 text-success flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
-              <ArrowUpCircle className="w-5 h-5 animate-pulse" />
+            <div className="w-8 h-8 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0">
+              <ArrowUpCircle className="w-4 h-4 animate-pulse" />
             </div>
           )}
           <div>
-            <h4 className="text-xs font-semibold text-content-light dark:text-content-dark">
+            <h4 className="text-ui font-semibold text-ink">
               {updateData.status === 'downloaded'
                 ? `Güncelleme Hazır (v${updateData.version || ''})`
                 : updateData.status === 'downloading'
-                  ? `Güncelleme İndiriliyor (v${updateData.version || ''})`
-                  : 'Yeni Sürüm Bulundu'}
+                ? `Güncelleme İndiriliyor (v${updateData.version || ''})`
+                : 'Yeni Sürüm Bulundu'}
             </h4>
-            <p className="text-[11px] text-content-mutedLight dark:text-content-mutedDark mt-0.5">
+            <p className="text-2xs text-muted mt-0.5 leading-relaxed">
               {updateData.status === 'downloaded'
-                ? 'Yeni sürüm indirildi. Yeniden başlatarak hemen yükleyebilirsiniz.'
+                ? 'Yeni sürüm hazır. Yeniden başlatıp hemen geçiş yapabilirsiniz.'
                 : updateData.status === 'downloading'
-                  ? `Arka planda indiriliyor... %${updateData.percent ?? 0}`
-                  : 'Yeni güncelleme paketi hazırlanıyor...'}
+                ? `Arka planda indiriliyor… %${updateData.percent ?? 0}`
+                : 'Yeni güncelleme paketi hazırlanıyor…'}
             </p>
           </div>
         </div>
 
         <button
           onClick={() => setIsDismissed(true)}
-          className="text-content-mutedLight dark:text-content-mutedDark hover:text-content-light dark:hover:text-content-dark p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          className="icon-btn -mr-1 -mt-1"
           title="Kapat"
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Progress Bar when downloading */}
       {updateData.status === 'downloading' && (
         <div className="mt-3">
-          <div className="w-full bg-black/10 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-ink/10 rounded-full h-1 overflow-hidden">
             <div
-              className="bg-accent h-1.5 rounded-full transition-all duration-300"
+              className="bg-accent h-1 rounded-full transition-all duration-300"
               style={{ width: `${Math.min(100, updateData.percent || 0)}%` }}
             />
           </div>
         </div>
       )}
 
-      {/* Actions when downloaded */}
       {updateData.status === 'downloaded' && (
         <div className="mt-3.5 flex items-center gap-2">
           <button
             onClick={handleInstallNow}
             disabled={isInstalling}
-            className="flex-1 py-1.5 px-3 bg-accent hover:bg-accent-hover active:bg-accent-active text-white rounded-lg text-xs font-medium transition-colors shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="flex-1 btn-primary h-8 text-ui gap-1.5"
           >
-            {isInstalling ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Yükleniyor...</span>
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Yeniden Başlat ve Yükle</span>
-              </>
-            )}
+            <RefreshCw className={`w-3.5 h-3.5 ${isInstalling ? 'animate-spin' : ''}`} />
+            <span>{isInstalling ? 'Yükleniyor…' : 'Yeniden Başlat ve Yükle'}</span>
           </button>
           <button
             onClick={() => setIsDismissed(true)}
-            className="py-1.5 px-2.5 rounded-lg border border-border-light dark:border-border-dark hover:bg-black/5 dark:hover:bg-white/5 text-xs text-content-mutedLight dark:text-content-mutedDark transition-colors"
+            className="btn-quiet h-8 text-ui"
           >
             Daha Sonra
           </button>

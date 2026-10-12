@@ -45,6 +45,19 @@ import {
 const store = new Store();
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  // 0. Window chrome — keep native caption buttons in sync with the renderer theme
+  ipcMain.handle('window:setTheme', async (_, isDark: boolean) => {
+    try {
+      mainWindow.setTitleBarOverlay({
+        color: isDark ? '#13191C' : '#F0F3F0',
+        symbolColor: isDark ? '#E2E7E3' : '#1C2523',
+        height: 40
+      });
+    } catch {
+      // setTitleBarOverlay is unavailable on some platforms
+    }
+  });
+
   // 1. Filesystem Handlers
   ipcMain.handle('files:open', async (_, filePath?: string) => {
     if (filePath) {

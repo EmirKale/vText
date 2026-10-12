@@ -149,46 +149,53 @@ export const ProofreadPanel: React.FC<ProofreadPanelProps> = ({ editor }) => {
   };
 
   return (
-    <div className="w-80 h-full border-l border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex flex-col z-20 shadow-lg text-content-light dark:text-content-dark select-none animate-in slide-in-from-right duration-200">
+    <aside
+      aria-label="Yazım ve dil bilgisi denetimi"
+      className="w-80 h-full border-l border-line bg-paper flex flex-col z-20 shadow-float text-ink select-none animate-drawer"
+    >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-light dark:border-border-dark bg-canvas-light/40 dark:bg-canvas-dark/40">
-        <div className="flex items-center gap-2 font-semibold text-xs text-emerald-600 dark:text-emerald-400">
-          <CheckCircle className="w-4 h-4" />
-          <span>Hataları Düzelt</span>
+      <div className="flex items-center justify-between px-4 h-12 border-b border-line bg-chrome/40 shrink-0">
+        <div className="flex items-center gap-2 font-semibold text-ui text-ink">
+          <span className="grid place-items-center w-5 h-5 rounded-md bg-marker text-marker-ink">
+            <Sparkles className="w-3.5 h-3.5" />
+          </span>
+          <span>Yazım ve Dil Bilgisi</span>
         </div>
         <button
           onClick={() => setProofreadOpen(false)}
-          className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-content-mutedLight dark:text-content-mutedDark"
+          className="icon-btn"
+          aria-label="Paneli kapat"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Action / Progress bar */}
-      <div className="p-3 border-b border-border-light dark:border-border-dark text-xs bg-canvas-light/20 dark:bg-canvas-dark/20">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-medium text-content-mutedLight dark:text-content-mutedDark">
+      <div className="p-3 border-b border-line bg-chrome/20 shrink-0">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-2xs font-medium text-muted truncate">
             {proofreadItems.length > 0
-              ? `${proofreadItems.length} düzeltme önerisi`
-              : 'Henüz tarama yapılmadı'}
+              ? `${proofreadItems.length} öneri bulundu`
+              : isScanning
+              ? 'Belge taranıyor…'
+              : 'Taramaya hazır'}
           </span>
           <button
             onClick={startProofread}
             disabled={isScanning}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors shadow-xs"
+            className="btn-primary h-7 px-2.5 text-2xs"
           >
             {isScanning ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <RefreshCw className="w-3 h-3" />
             )}
-            <span>{isScanning ? 'Taranıyor...' : 'Belgeyi Tara'}</span>
+            <span>{isScanning ? 'Taranıyor…' : 'Belgeyi Tara'}</span>
           </button>
         </div>
 
-        {/* Progress indicator */}
         {proofreadProgress && (
-          <div className="w-full bg-black/10 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-ink/10 rounded-full h-1 overflow-hidden">
             <div
               className="bg-accent h-full transition-all duration-300"
               style={{
@@ -196,7 +203,7 @@ export const ProofreadPanel: React.FC<ProofreadPanelProps> = ({ editor }) => {
                   (proofreadProgress.processed / Math.max(1, proofreadProgress.total)) * 100
                 )}%`
               }}
-            ></div>
+            />
           </div>
         )}
       </div>
@@ -206,54 +213,50 @@ export const ProofreadPanel: React.FC<ProofreadPanelProps> = ({ editor }) => {
         {proofreadItems.map((item) => (
           <div
             key={item.id}
-            className="p-3 rounded-lg border border-border-light dark:border-border-dark bg-canvas-light/50 dark:bg-canvas-dark/50 text-xs space-y-1.5 shadow-xs"
+            className="p-3 rounded-xl border border-line bg-chrome/30 hover:bg-chrome/60 transition-colors text-ui space-y-2 shadow-xs"
           >
-            {/* Comparison */}
-            <div className="flex items-center gap-2">
-              <span className="line-through text-red-500 font-medium px-1.5 py-0.5 rounded bg-red-500/10">
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="line-through text-danger font-medium px-1.5 py-0.5 rounded bg-danger/10 text-2xs">
                 {item.original}
               </span>
-              <span className="text-content-mutedLight dark:text-content-mutedDark font-bold">→</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10">
+              <span className="text-muted text-2xs font-bold">→</span>
+              <span className="text-success font-semibold px-1.5 py-0.5 rounded bg-success/10 text-2xs">
                 {item.corrected}
               </span>
             </div>
 
-            {/* Reason */}
             {item.reason && (
-              <div className="text-[11px] text-content-mutedLight dark:text-content-mutedDark">
+              <p className="text-2xs text-muted leading-relaxed">
                 {item.reason}
-              </div>
+              </p>
             )}
 
-            {/* Accept / Reject buttons */}
-            <div className="flex items-center justify-end gap-1.5 pt-1">
+            <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-line/60">
               <button
                 onClick={() => handleReject(item)}
-                title="Reddet"
-                className="flex items-center gap-1 px-2 py-1 rounded text-content-mutedLight dark:text-content-mutedDark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                className="btn-quiet h-6 px-2 text-2xs"
               >
-                <X className="w-3 h-3 text-red-500" />
-                <span>Yoksay</span>
+                Yoksay
               </button>
               <button
                 onClick={() => handleAccept(item)}
-                title="Kabul Et"
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25 font-medium transition-colors"
+                className="btn-outline h-6 px-2.5 text-2xs text-success border-success/30 hover:bg-success/10"
               >
-                <Check className="w-3 h-3" />
-                <span>Kabul Et</span>
+                <Check className="w-3 h-3 mr-1" />
+                Kabul et
               </button>
             </div>
           </div>
         ))}
 
         {!isScanning && proofreadItems.length === 0 && (
-          <div className="text-center py-10 px-4 text-xs text-content-mutedLight dark:text-content-mutedDark">
-            <Sparkles className="w-8 h-8 mx-auto mb-2 text-accent opacity-50" />
-            <p className="font-medium text-content-light dark:text-content-dark">Yazım ve Dil Bilgisi Denetimi</p>
-            <p className="mt-1 text-[11px]">
-              Belgenizdeki hataları bulmak için yukarıdaki <strong>Belgeyi Tara</strong> butonuna basın.
+          <div className="text-center py-14 px-4 text-ui text-muted">
+            <div className="w-10 h-10 mx-auto mb-3 rounded-xl bg-marker/15 text-marker-ink grid place-items-center">
+              <Sparkles className="w-5 h-5 text-marker-ink" />
+            </div>
+            <p className="font-semibold text-ink text-ui">Tertemiz Metinler</p>
+            <p className="mt-1 text-2xs text-muted max-w-[200px] mx-auto leading-relaxed">
+              Yapay zekâ ile belgenizdeki imla ve anlatım bozukluklarını yakalamak için yukarıdaki butona tıklayın.
             </p>
           </div>
         )}
@@ -261,16 +264,17 @@ export const ProofreadPanel: React.FC<ProofreadPanelProps> = ({ editor }) => {
 
       {/* Footer All Accept button */}
       {proofreadItems.length > 0 && (
-        <div className="p-3 border-t border-border-light dark:border-border-dark bg-canvas-light/40 dark:bg-canvas-dark/40">
+        <div className="p-3 border-t border-line bg-chrome/40 shrink-0">
           <button
             onClick={handleAcceptAll}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs shadow-sm transition-all"
+            className="w-full btn-primary h-8 text-ui shadow-sm"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Tümünü Kabul Et ({proofreadItems.length})</span>
           </button>
         </div>
       )}
-    </div>
+    </aside>
   );
 };
+

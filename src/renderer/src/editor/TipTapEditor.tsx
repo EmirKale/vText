@@ -32,7 +32,7 @@ interface TipTapEditorProps {
 }
 
 export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, onEditorReady }) => {
-  const { viewMode, settings } = useAppStore();
+  const { viewMode, settings, isFocusMode } = useAppStore();
   const lastContentRef = useRef(content);
 
   const editor = useEditor({
@@ -120,16 +120,26 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
   }, [content]);
 
   return (
-    <div className="flex-1 w-full h-full overflow-y-auto py-8 px-4 flex justify-center bg-canvas-light dark:bg-canvas-dark">
+    <div
+      className={`flex-1 w-full h-full overflow-y-auto flex justify-center px-6 bg-desk ${
+        isFocusMode ? 'pt-16 pb-24' : 'pt-[76px] pb-24'
+      }`}
+      onMouseDown={(e) => {
+        // Clicking the empty desk focuses the end of the document
+        if (e.target === e.currentTarget && editor) {
+          e.preventDefault();
+          editor.commands.focus('end');
+        }
+      }}
+    >
       {editor && <BubbleMenuCard editor={editor} />}
 
-      {/* Page View vs Stream View */}
       <div
         style={{ fontSize: `${settings.fontSize}px` }}
-        className={`w-full transition-all duration-200 ${
-          viewMode === 'page'
-            ? 'max-w-[760px] p-12 my-2 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md shadow-page'
-            : 'max-w-4xl p-6 bg-transparent'
+        className={`w-full h-fit transition-[max-width,padding] duration-200 ${
+          viewMode === 'page' && !isFocusMode
+            ? 'max-w-[816px] min-h-[1056px] px-[88px] py-[80px] bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60'
+            : 'max-w-[700px] px-2 py-4'
         }`}
       >
         <EditorContent editor={editor} />

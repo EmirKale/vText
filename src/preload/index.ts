@@ -10,6 +10,9 @@ import {
 } from '../shared/types';
 
 export const kalemApi = {
+  window: {
+    setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark)
+  },
   files: {
     open: (filePath?: string) => ipcRenderer.invoke('files:open', filePath),
     showSaveDialog: (defaultTitle: string, format: DocumentFormat) =>

@@ -1,70 +1,66 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Moon, Sun, Monitor, Maximize2, Minimize2, FileText } from 'lucide-react';
+import { Moon, Sun, Maximize2, Minimize2, FileText, AlignJustify } from 'lucide-react';
 import { VTextLogo } from './VTextLogo';
+import { TabBar } from './TabBar';
+import { applyTheme, isDarkActive } from '../lib/theme';
 
 export const TitleBar: React.FC = () => {
-  const { tabs, activeTabId, viewMode, setViewMode, isFocusMode, toggleFocusMode, settings, updateSettings } = useAppStore();
-  const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
+  const { tabs, activeTabId, viewMode, setViewMode, isFocusMode, toggleFocusMode, updateSettings } = useAppStore();
+  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const dark = isDarkActive();
 
   const handleThemeToggle = () => {
-    const nextTheme = settings.theme === 'dark' ? 'light' : 'dark';
+    const nextTheme = dark ? 'light' : 'dark';
     updateSettings({ theme: nextTheme });
-    if (window.kalem?.settings) {
-      window.kalem.settings.save({ theme: nextTheme });
-    }
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    window.kalem?.settings?.save({ theme: nextTheme });
+    applyTheme(nextTheme);
   };
 
   return (
-    <div className="h-[38px] flex items-center justify-between px-3 select-none border-b border-border-light dark:border-border-dark bg-canvas-light dark:bg-canvas-dark text-xs text-content-mutedLight dark:text-content-mutedDark z-50">
-      {/* Brand & Active Document Name */}
-      <div className="flex items-center gap-2">
-        <VTextLogo size={18} showText={true} textSize="text-xs" />
-        <span className="text-border-light dark:text-border-dark">/</span>
-        <span className="font-medium text-content-light dark:text-content-dark truncate max-w-[240px]">
-          {activeTab ? activeTab.title : 'Yeni Belge'}
-          {activeTab?.isDirty && <span className="text-accent ml-1 font-bold">•</span>}
-        </span>
+    <div className="drag relative h-10 flex items-end gap-2 pl-3 bg-chrome border-b border-line select-none z-40 shrink-0">
+      <div className="h-full flex items-center shrink-0">
+        <VTextLogo size={20} />
       </div>
 
-      {/* Center / Right Controls (Leaving space for Windows titleBarOverlay on far right) */}
-      <div className="flex items-center gap-1 pr-[140px]">
-        {/* View Mode Toggle */}
+      <div className="flex-1 min-w-0 h-full flex items-end">
+        {isFocusMode ? (
+          <div className="h-full flex items-center text-ui text-muted truncate">
+            {activeTab?.title}
+            {activeTab?.isDirty && <span className="ml-2 w-[7px] h-[7px] rounded-full bg-accent inline-block" />}
+          </div>
+        ) : (
+          <div className="-mb-px h-[33px] min-w-0">
+            <TabBar />
+          </div>
+        )}
+      </div>
+
+      {/* Right controls — 140px reserved for the native window buttons */}
+      <div className="h-full flex items-center gap-0.5 pr-[146px] no-drag shrink-0">
         <button
           onClick={() => setViewMode(viewMode === 'page' ? 'stream' : 'page')}
-          title={viewMode === 'page' ? 'Akış Görünümüne Geç' : 'A4 Sayfa Görünümüne Geç'}
-          className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          title={viewMode === 'page' ? 'Akış görünümüne geç' : 'Sayfa görünümüne geç'}
+          className="icon-btn w-auto px-2 gap-1.5 text-2xs font-medium"
         >
-          <FileText className="w-3.5 h-3.5" />
-          <span>{viewMode === 'page' ? 'A4 Sayfa' : 'Akış'}</span>
+          {viewMode === 'page' ? <FileText className="w-3.5 h-3.5" /> : <AlignJustify className="w-3.5 h-3.5" />}
+          <span>{viewMode === 'page' ? 'Sayfa' : 'Akış'}</span>
         </button>
 
-        {/* Focus Mode Toggle */}
         <button
           onClick={toggleFocusMode}
-          title={isFocusMode ? 'Odak Modundan Çık (F11)' : 'Odak Modu (F11)'}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          data-active={isFocusMode}
+          title={isFocusMode ? 'Odak modundan çık (F11)' : 'Odak modu (F11)'}
+          className="icon-btn"
         >
-          {isFocusMode ? <Minimize2 className="w-3.5 h-3.5 text-accent" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          {isFocusMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
 
-        {/* Theme Toggle */}
-        <button
-          onClick={handleThemeToggle}
-          title="Temayı Değiştir"
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-        >
-          {settings.theme === 'dark' ? (
-            <Sun className="w-3.5 h-3.5 text-amber-400" />
-          ) : (
-            <Moon className="w-3.5 h-3.5" />
-          )}
+        <button onClick={handleThemeToggle} title={dark ? 'Açık temaya geç' : 'Koyu temaya geç'} className="icon-btn">
+          {dark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
         </button>
+
+        <span className="w-px h-4 bg-line ml-1.5" />
       </div>
     </div>
   );

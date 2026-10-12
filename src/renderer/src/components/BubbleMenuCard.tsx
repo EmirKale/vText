@@ -14,7 +14,8 @@ import {
   Check,
   PlusCircle,
   RotateCcw,
-  X
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { RewriteAction } from '../../../shared/types';
 
@@ -23,7 +24,14 @@ interface BubbleMenuCardProps {
 }
 
 export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
-  const { setImageOpen, setAiStatus, setCurrentRequestId } = useAppStore();
+  const {
+    isImageOpen,
+    isArticleOpen,
+    isSettingsOpen,
+    setImageOpen,
+    setAiStatus,
+    setCurrentRequestId
+  } = useAppStore();
   const [isRewriting, setIsRewriting] = useState(false);
   const [originalText, setOriginalText] = useState('');
   const [rewrittenText, setRewrittenText] = useState('');
@@ -135,210 +143,153 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
   const handleGenerateImage = () => {
     const { from, to } = editor.state.selection;
     const text = editor.state.doc.textBetween(from, to, ' ');
+    setShowToneSubmenu(false);
+    setShowTranslateSubmenu(false);
+    setShowPreviewCard(false);
     setImageOpen(true, text);
   };
+
+  const pillBtn =
+    'flex items-center gap-1.5 h-7 px-2 rounded-md text-ink/80 hover:text-ink hover:bg-ink/[0.06] transition-colors whitespace-nowrap';
+  const subMenu = 'menu absolute bottom-full mb-2 w-36';
 
   return (
     <>
       <BubbleMenu
         editor={editor}
         tippyOptions={{
-          duration: 150,
+          duration: 120,
           placement: 'top',
-          offset: [0, 8],
-          maxWidth: 'none'
+          offset: [0, 10],
+          maxWidth: 'none',
+          zIndex: 40
         }}
         shouldShow={({ state, from, to }) => {
+          if (isImageOpen || isArticleOpen || isSettingsOpen) return false;
+          if (showPreviewCard) return false;
           const text = state.doc.textBetween(from, to, ' ');
-          return !showPreviewCard && text.trim().length > 2;
+          return text.trim().length > 2;
         }}
       >
-        <div className="flex flex-wrap items-center gap-0.5 p-1 rounded-lg shadow-xl border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-xs text-content-light dark:text-content-dark select-none animate-in fade-in zoom-in-95 duration-150 max-w-[95vw]">
-          {/* Daha uzun yaz */}
-          <button
-            onClick={() => handleRewrite('longer')}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
-            title="Daha Uzun Yaz"
-          >
-            <Maximize2 className="w-3.5 h-3.5 text-accent" />
-            <span>Uzat</span>
+        <div className="flex items-center gap-0.5 p-1 rounded-xl bg-paper border border-line shadow-float text-ui text-ink select-none max-w-[95vw] animate-pop">
+          <span className="flex items-center gap-1 h-6 pl-1.5 pr-2 mr-0.5 rounded-md bg-marker text-marker-ink text-2xs font-semibold">
+            <Sparkles className="w-3 h-3" />
+            AI
+          </span>
+
+          <button onClick={() => handleRewrite('fix')} className={pillBtn} title="Yazım hatalarını düzelt">
+            <CheckCircle className="w-3.5 h-3.5" />
+            Düzelt
+          </button>
+          <button onClick={() => handleRewrite('rephrase')} className={pillBtn} title="Farklı sözcüklerle yeniden yaz">
+            <Repeat className="w-3.5 h-3.5" />
+            Yeniden yaz
+          </button>
+          <button onClick={() => handleRewrite('longer')} className={pillBtn} title="Daha uzun yaz">
+            <Maximize2 className="w-3.5 h-3.5" />
+            Uzat
+          </button>
+          <button onClick={() => handleRewrite('shorter')} className={pillBtn} title="Daha kısa yaz">
+            <Minimize2 className="w-3.5 h-3.5" />
+            Kısalt
           </button>
 
-          {/* Daha kısa yaz */}
-          <button
-            onClick={() => handleRewrite('shorter')}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
-            title="Daha Kısa Yaz"
-          >
-            <Minimize2 className="w-3.5 h-3.5 text-accent" />
-            <span>Kısalt</span>
-          </button>
+          <span className="w-px h-4 bg-line mx-0.5" />
 
-          {/* Yazımı düzelt */}
-          <button
-            onClick={() => handleRewrite('fix')}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
-            title="Yazımı Düzelt"
-          >
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Düzelt</span>
-          </button>
-
-          {/* Tonu değiştir */}
           <div className="relative">
             <button
               onClick={() => { setShowToneSubmenu(!showToneSubmenu); setShowTranslateSubmenu(false); }}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
+              className={pillBtn}
+              aria-expanded={showToneSubmenu}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Ton ▾</span>
+              Ton
+              <ChevronDown className="w-3 h-3 opacity-70" />
             </button>
             {showToneSubmenu && (
-              <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 w-28 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md shadow-lg py-1 z-[60]">
-                <button
-                  onClick={() => handleRewrite('tone', 'formal')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  Resmi
-                </button>
-                <button
-                  onClick={() => handleRewrite('tone', 'friendly')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  Samimi
-                </button>
-                <button
-                  onClick={() => handleRewrite('tone', 'fluent')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  Akıcı
-                </button>
+              <div className={`${subMenu} left-1/2 -translate-x-1/2`}>
+                <button onClick={() => handleRewrite('tone', 'formal')} className="menu-item">Resmi</button>
+                <button onClick={() => handleRewrite('tone', 'friendly')} className="menu-item">Samimi</button>
+                <button onClick={() => handleRewrite('tone', 'fluent')} className="menu-item">Akıcı</button>
               </div>
             )}
           </div>
 
-          {/* Yeniden ifade et */}
-          <button
-            onClick={() => handleRewrite('rephrase')}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
-            title="Yeniden İfade Et"
-          >
-            <Repeat className="w-3.5 h-3.5 text-blue-500" />
-            <span>Yeniden Yaz</span>
-          </button>
-
-          {/* Görsel oluştur */}
-          <button
-            onClick={handleGenerateImage}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-purple-600 dark:text-purple-400 transition-colors whitespace-nowrap"
-            title="Seçili Metinle İlgili Görsel Oluştur"
-          >
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>Görsel</span>
-          </button>
-
-          {/* Seçimi çevir */}
           <div className="relative">
             <button
               onClick={() => { setShowTranslateSubmenu(!showTranslateSubmenu); setShowToneSubmenu(false); }}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
+              className={pillBtn}
+              aria-expanded={showTranslateSubmenu}
             >
-              <Globe className="w-3.5 h-3.5 text-teal-500" />
-              <span>Çevir ▾</span>
+              <Globe className="w-3.5 h-3.5" />
+              Çevir
+              <ChevronDown className="w-3 h-3 opacity-70" />
             </button>
             {showTranslateSubmenu && (
-              <div className="absolute right-0 bottom-full mb-1 w-28 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md shadow-lg py-1 z-[60]">
-                <button
-                  onClick={() => handleRewrite('translate', undefined, 'İngilizce')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  🇬🇧 İngilizce
-                </button>
-                <button
-                  onClick={() => handleRewrite('translate', undefined, 'Almanca')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  🇩🇪 Almanca
-                </button>
-                <button
-                  onClick={() => handleRewrite('translate', undefined, 'İspanyolca')}
-                  className="w-full text-left px-2.5 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  🇪🇸 İspanyolca
-                </button>
+              <div className={`${subMenu} right-0`}>
+                <button onClick={() => handleRewrite('translate', undefined, 'İngilizce')} className="menu-item">İngilizce</button>
+                <button onClick={() => handleRewrite('translate', undefined, 'Almanca')} className="menu-item">Almanca</button>
+                <button onClick={() => handleRewrite('translate', undefined, 'İspanyolca')} className="menu-item">İspanyolca</button>
+                <button onClick={() => handleRewrite('translate', undefined, 'Türkçe')} className="menu-item">Türkçe</button>
               </div>
             )}
           </div>
+
+          <button onClick={handleGenerateImage} className={pillBtn} title="Seçili metinden görsel oluştur">
+            <ImageIcon className="w-3.5 h-3.5" />
+            Görsel
+          </button>
         </div>
       </BubbleMenu>
 
-      {/* Comparison Preview Card (Yol Haritası Madde 313) */}
-      {showPreviewCard && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 w-[540px] max-w-[90vw] p-4 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl z-50 text-xs text-content-light dark:text-content-dark animate-in slide-in-from-bottom-4 duration-200">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-border-light dark:border-border-dark font-medium">
-            <div className="flex items-center gap-1.5 text-accent">
-              <Sparkles className="w-4 h-4" />
-              <span>Yapay Zeka Metin Karşılaştırması</span>
+      {/* Compare card: original vs. AI suggestion */}
+      {showPreviewCard && !isImageOpen && !isArticleOpen && !isSettingsOpen && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 w-[600px] max-w-[calc(100vw-120px)] rounded-2xl bg-paper border border-line shadow-modal z-40 text-ink animate-pop overflow-hidden">
+          <div className="flex items-center justify-between px-4 h-11 border-b border-line">
+            <div className="flex items-center gap-2 text-ui font-semibold">
+              <span className="grid place-items-center w-5 h-5 rounded-md bg-marker text-marker-ink">
+                <Sparkles className="w-3 h-3" />
+              </span>
+              {isRewriting ? 'Öneri yazılıyor…' : 'Öneri hazır'}
             </div>
-            <button onClick={handleCancel} className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5">
-              <X className="w-3.5 h-3.5" />
+            <button onClick={handleCancel} className="icon-btn" aria-label="Kapat">
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 my-3">
-            {/* Orijinal Metin */}
-            <div className="p-2.5 rounded-lg bg-black/5 dark:bg-white/5">
-              <div className="text-[10px] uppercase font-semibold text-content-mutedLight dark:text-content-mutedDark mb-1">
-                Orijinal
-              </div>
-              <div className="max-h-36 overflow-y-auto leading-relaxed select-text">
+          <div className="grid grid-cols-2 divide-x divide-line">
+            <div className="p-4">
+              <div className="mb-2 text-2xs font-medium text-muted">Seçtiğiniz metin</div>
+              <div className="max-h-44 overflow-y-auto font-serif text-[14px] leading-relaxed text-ink/70 select-text">
                 {originalText}
               </div>
             </div>
-
-            {/* Yeni / Yeniden Yazılan Metin */}
-            <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20">
-              <div className="flex items-center justify-between text-[10px] uppercase font-semibold text-accent mb-1">
-                <span>Yeni Öneri</span>
-                {isRewriting && <Loader2 className="w-3 h-3 animate-spin" />}
+            <div className="p-4 bg-marker/[0.09]">
+              <div className="mb-2 flex items-center gap-1.5 text-2xs font-medium text-ink">
+                Öneri
+                {isRewriting && <Loader2 className="w-3 h-3 animate-spin text-muted" />}
               </div>
-              <div className="max-h-36 overflow-y-auto leading-relaxed select-text font-medium">
-                {rewrittenText || (isRewriting ? 'Yazılıyor...' : '')}
+              <div className="max-h-44 overflow-y-auto font-serif text-[14px] leading-relaxed select-text">
+                {rewrittenText || (
+                  <span className="block h-4 w-3/4 rounded marker-sweep bg-ink/[0.05]" aria-label="Yazılıyor" />
+                )}
               </div>
             </div>
           </div>
 
-          {/* Action buttons: Değiştir, Altına ekle, Tekrar dene, Vazgeç */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-light dark:border-border-dark">
-            <button
-              onClick={handleCancel}
-              className="px-3 py-1.5 rounded text-content-mutedLight dark:text-content-mutedDark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-            >
-              Vazgeç
+          <div className="flex items-center gap-2 px-4 py-3 border-t border-line bg-chrome/60">
+            <button onClick={handleRetry} disabled={isRewriting} className="btn-quiet">
+              <RotateCcw className="w-3.5 h-3.5" />
+              Tekrar dene
             </button>
-            <button
-              onClick={handleRetry}
-              disabled={isRewriting}
-              className="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Tekrar Dene</span>
+            <div className="flex-1" />
+            <button onClick={handleCancel} className="btn-quiet">Vazgeç</button>
+            <button onClick={handleApplyAppend} disabled={isRewriting || !rewrittenText} className="btn-outline">
+              <PlusCircle className="w-3.5 h-3.5" />
+              Altına ekle
             </button>
-            <button
-              onClick={handleApplyAppend}
-              disabled={isRewriting || !rewrittenText}
-              className="flex items-center gap-1 px-3 py-1.5 rounded bg-black/10 dark:bg-white/10 hover:bg-black/15 dark:hover:bg-white/15 transition-colors disabled:opacity-50 font-medium"
-            >
-              <PlusCircle className="w-3 h-3" />
-              <span>Altına Ekle</span>
-            </button>
-            <button
-              onClick={handleApplyReplace}
-              disabled={isRewriting || !rewrittenText}
-              className="flex items-center gap-1 px-3.5 py-1.5 rounded bg-accent text-white hover:bg-accent-hover transition-colors shadow-sm disabled:opacity-50 font-medium"
-            >
+            <button onClick={handleApplyReplace} disabled={isRewriting || !rewrittenText} className="btn-primary">
               <Check className="w-3.5 h-3.5" />
-              <span>Değiştir</span>
+              Metnin yerine koy
             </button>
           </div>
         </div>

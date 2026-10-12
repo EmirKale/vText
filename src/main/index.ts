@@ -59,10 +59,11 @@ function createWindow(): void {
     icon: path.join(__dirname, '../../resources/icon.png'),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: nativeTheme.shouldUseDarkColors ? '#17181B' : '#F5F5F4',
-      symbolColor: nativeTheme.shouldUseDarkColors ? '#E5E7EB' : '#1F2937',
-      height: 38
+      color: nativeTheme.shouldUseDarkColors ? '#13191C' : '#F0F3F0',
+      symbolColor: nativeTheme.shouldUseDarkColors ? '#E2E7E3' : '#1C2523',
+      height: 40
     },
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0E1315' : '#E6EAE6',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,

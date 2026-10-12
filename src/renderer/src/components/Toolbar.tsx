@@ -1,14 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Editor } from '@tiptap/react';
-import { useAppStore } from '../store/useAppStore';
 import {
   Bold,
   Italic,
   Underline as UnderlineIcon,
   Strikethrough,
-  Heading1,
-  Heading2,
-  Heading3,
   List,
   ListOrdered,
   ListTodo,
@@ -20,344 +16,270 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  Sparkles,
-  CheckCircle,
-  Globe,
-  Settings,
   Terminal,
-  Info
+  Info,
+  Undo2,
+  Redo2,
+  Plus,
+  ChevronDown,
+  Minus,
+  Check
 } from 'lucide-react';
 
 interface ToolbarProps {
   editor: Editor | null;
 }
 
+const BLOCK_TYPES = [
+  { id: 'p', label: 'Paragraf', preview: 'text-[13px]' },
+  { id: 'h1', label: 'Başlık 1', preview: 'text-[17px] font-semibold' },
+  { id: 'h2', label: 'Başlık 2', preview: 'text-[15px] font-semibold' },
+  { id: 'h3', label: 'Başlık 3', preview: 'text-[13.5px] font-semibold' }
+] as const;
+
+/** Close a popover when clicking outside of it. */
+function useOutside(ref: React.RefObject<HTMLElement>, onOutside: () => void, active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onOutside();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [active, onOutside, ref]);
+}
+
+const Sep = () => <span className="w-px h-4 bg-line mx-1 shrink-0" />;
+
+const Btn: React.FC<{
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  title: string;
+  children: React.ReactNode;
+}> = ({ onClick, active, disabled, title, children }) => (
+  <button
+    type="button"
+    onMouseDown={(e) => e.preventDefault()}
+    onClick={onClick}
+    data-active={!!active}
+    disabled={disabled}
+    title={title}
+    aria-label={title}
+    aria-pressed={active}
+    className="icon-btn shrink-0"
+  >
+    {children}
+  </button>
+);
+
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
-  const { setArticleOpen, setProofreadOpen, setSettingsOpen, isProofreadOpen, addTab, tabs, activeTabId } = useAppStore();
-  const [showTranslateMenu, setShowTranslateMenu] = useState(false);
+  const [, rerender] = useReducer((x: number) => x + 1, 0);
+  const [openMenu, setOpenMenu] = useState<null | 'block' | 'insert'>(null);
+  const blockRef = useRef<HTMLDivElement>(null);
+  const insertRef = useRef<HTMLDivElement>(null);
+
+  useOutside(blockRef, () => setOpenMenu(null), openMenu === 'block');
+  useOutside(insertRef, () => setOpenMenu(null), openMenu === 'insert');
+
+  // Re-render on every selection / content change so active states stay accurate
+  useEffect(() => {
+    if (!editor) return;
+    editor.on('transaction', rerender);
+    return () => {
+      editor.off('transaction', rerender);
+    };
+  }, [editor]);
 
   if (!editor) return null;
 
-  const handleTranslate = async (lang: string, langName: string) => {
-    setShowTranslateMenu(false);
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    if (!editor) return;
+  const chain = () => editor.chain().focus();
 
-    // Convert editor content to markdown for cleaner AI translation
-    const { tipTapJsonToMarkdown } = await import('../io/markdown');
-    const mdContent = tipTapJsonToMarkdown(editor.getJSON());
+  const currentBlock =
+    editor.isActive('heading', { level: 1 }) ? 'h1'
+    : editor.isActive('heading', { level: 2 }) ? 'h2'
+    : editor.isActive('heading', { level: 3 }) ? 'h3'
+    : 'p';
 
-    const newTabTitle = `${activeTab ? activeTab.title.replace(/\.[^/.]+$/, '') : 'Belge'} (${lang.toUpperCase()})`;
-    const newTabId = addTab(newTabTitle, '<p>Çeviri hazırlanıyor...</p>');
-
-    if (window.kalem?.ai) {
-      const requestId = `tr-${Date.now()}`;
-      let accumulatedMd = '';
-
-      const cleanup = window.kalem.ai.translate(
-        requestId,
-        mdContent,
-        langName,
-        (chunk) => {
-          accumulatedMd += chunk;
-          // Convert accumulated markdown to HTML and update tab content
-          const { markdownToHtml } = require('../io/markdown');
-          const html = markdownToHtml(accumulatedMd);
-          useAppStore.getState().updateTabContent(newTabId, html);
-        },
-        () => {
-          // Done - final update
-          if (cleanup) cleanup();
-        },
-        (err) => {
-          alert(`Çeviri hatası: ${err}`);
-          if (cleanup) cleanup();
-        }
-      );
-    }
+  const setBlock = (id: string) => {
+    if (id === 'p') chain().setParagraph().run();
+    else chain().setHeading({ level: Number(id[1]) as 1 | 2 | 3 }).run();
+    setOpenMenu(null);
   };
 
   const handleAddImage = () => {
-    const url = prompt('Görsel URL veya dosya yolu girin:');
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
+    const url = prompt('Görsel adresi (URL veya dosya yolu):');
+    if (url) chain().setImage({ src: url }).run();
   };
 
   const handleAddLink = () => {
     const previousUrl = editor.getAttributes('link').href;
-    const url = prompt('Web Bağlantısı (URL):', previousUrl);
+    const url = prompt('Bağlantı adresi:', previousUrl);
     if (url === null) return;
     if (url === '') {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      chain().extendMarkRange('link').unsetLink().run();
       return;
     }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    chain().extendMarkRange('link').setLink({ href: url }).run();
   };
 
+  const insertItems = [
+    {
+      icon: <Code className="w-4 h-4" />,
+      label: 'Kod bloğu',
+      run: () => chain().toggleCodeBlock().run()
+    },
+    {
+      icon: <Terminal className="w-4 h-4" />,
+      label: 'Prompt bloğu',
+      run: () =>
+        (chain() as any)
+          .insertContent({ type: 'promptBlock', content: [{ type: 'text', text: 'Prompt metnini buraya yazın…' }] })
+          .run()
+    },
+    {
+      icon: <Info className="w-4 h-4" />,
+      label: 'Bilgi kutusu',
+      run: () =>
+        (chain() as any)
+          .insertContent({ type: 'callout', attrs: { type: 'info' }, content: [{ type: 'text', text: 'Önemli bir not…' }] })
+          .run()
+    },
+    {
+      icon: <Minus className="w-4 h-4" />,
+      label: 'Ayırıcı çizgi',
+      run: () => chain().setHorizontalRule().run()
+    }
+  ];
+
+  const blockLabel = BLOCK_TYPES.find((b) => b.id === currentBlock)?.label;
+
   return (
-    <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark select-none text-xs gap-2 overflow-x-auto">
-      {/* Formatting tools */}
-      <div className="flex items-center gap-0.5">
-        {/* Headings */}
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('heading', { level: 1 }) ? 'bg-accent/15 text-accent font-bold' : ''
-          }`}
-          title="Başlık 1"
-        >
-          <Heading1 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('heading', { level: 2 }) ? 'bg-accent/15 text-accent font-bold' : ''
-          }`}
-          title="Başlık 2"
-        >
-          <Heading2 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('heading', { level: 3 }) ? 'bg-accent/15 text-accent font-bold' : ''
-          }`}
-          title="Başlık 3"
-        >
-          <Heading3 className="w-3.5 h-3.5" />
-        </button>
+    <div
+      role="toolbar"
+      aria-label="Biçimlendirme"
+      className="flex items-center h-10 px-1.5 rounded-xl bg-paper/95 border border-line shadow-float backdrop-blur-sm max-w-full"
+    >
+      <Btn onClick={() => chain().undo().run()} disabled={!editor.can().undo()} title="Geri al (Ctrl+Z)">
+        <Undo2 className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().redo().run()} disabled={!editor.can().redo()} title="Yinele (Ctrl+Y)">
+        <Redo2 className="w-4 h-4" />
+      </Btn>
 
-        <span className="w-px h-4 bg-border-light dark:bg-border-dark mx-1"></span>
+      <Sep />
 
-        {/* Text styling */}
+      {/* Block type */}
+      <div className="relative shrink-0" ref={blockRef}>
         <button
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('bold') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Kalın (Ctrl+B)"
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpenMenu(openMenu === 'block' ? null : 'block')}
+          className="flex items-center justify-between gap-1 h-7 w-[104px] pl-2.5 pr-1.5 rounded-md text-ui text-ink hover:bg-ink/[0.06] transition-colors"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === 'block'}
         >
-          <Bold className="w-3.5 h-3.5" />
+          <span className="truncate">{blockLabel}</span>
+          <ChevronDown className="w-3.5 h-3.5 text-muted" />
         </button>
-        <button
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('italic') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="İtalik (Ctrl+I)"
-        >
-          <Italic className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('underline') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Altı Çizili (Ctrl+U)"
-        >
-          <UnderlineIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('strike') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Üstü Çizili"
-        >
-          <Strikethrough className="w-3.5 h-3.5" />
-        </button>
-
-        <span className="w-px h-4 bg-border-light dark:bg-border-dark mx-1"></span>
-
-        {/* Alignment */}
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive({ textAlign: 'left' }) ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Sola Hizala"
-        >
-          <AlignLeft className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive({ textAlign: 'center' }) ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Ortala"
-        >
-          <AlignCenter className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive({ textAlign: 'right' }) ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Sağa Hizala"
-        >
-          <AlignRight className="w-3.5 h-3.5" />
-        </button>
-
-        <span className="w-px h-4 bg-border-light dark:bg-border-dark mx-1"></span>
-
-        {/* Lists & Quotes */}
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('bulletList') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Madde İşaretli Liste"
-        >
-          <List className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('orderedList') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Numaralı Liste"
-        >
-          <ListOrdered className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleTaskList().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('taskList') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Görev Listesi"
-        >
-          <ListTodo className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('blockquote') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Alıntı"
-        >
-          <Quote className="w-3.5 h-3.5" />
-        </button>
-
-        <span className="w-px h-4 bg-border-light dark:bg-border-dark mx-1"></span>
-
-        {/* Insert Elements */}
-        <button
-          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          title="Tablo Ekle"
-        >
-          <TableIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('codeBlock') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Kod Bloğu"
-        >
-          <Code className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => (editor.chain().focus() as any).insertContent({ type: 'promptBlock', content: [{ type: 'text', text: 'Prompt metnini buraya yazın...' }] }).run()}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-accent transition-colors"
-          title="Prompt Bloğu Ekle"
-        >
-          <Terminal className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => (editor.chain().focus() as any).insertContent({ type: 'callout', attrs: { type: 'info' }, content: [{ type: 'text', text: 'Önemli bilgi notu...' }] }).run()}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          title="Bilgi / Callout Kutusu"
-        >
-          <Info className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleAddImage}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          title="Görsel Ekle"
-        >
-          <ImageIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleAddLink}
-          className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
-            editor.isActive('link') ? 'bg-accent/15 text-accent' : ''
-          }`}
-          title="Bağlantı (Link)"
-        >
-          <LinkIcon className="w-3.5 h-3.5" />
-        </button>
+        {openMenu === 'block' && (
+          <div className="menu absolute left-0 top-full mt-2 w-48" role="menu">
+            {BLOCK_TYPES.map((b) => (
+              <button key={b.id} role="menuitem" onClick={() => setBlock(b.id)} className="menu-item h-9">
+                <span className={`flex-1 font-serif ${b.preview}`}>{b.label}</span>
+                {currentBlock === b.id && <Check className="w-3.5 h-3.5 text-accent" />}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* AI Features & Settings */}
-      <div className="flex items-center gap-1.5 relative">
-        {/* Translate dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setShowTranslateMenu(!showTranslateMenu)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-content-light dark:text-content-dark hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-            title="Belgeyi Yeni Sekmede Çevir"
-          >
-            <Globe className="w-3.5 h-3.5 text-accent" />
-            <span>Çevir</span>
-          </button>
-          {showTranslateMenu && (
-            <div className="absolute right-0 top-full mt-1 w-32 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-md shadow-lg py-1 z-50">
-              <button
-                onClick={() => handleTranslate('en', 'İngilizce')}
-                className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-xs transition-colors"
-              >
-                🇬🇧 İngilizce
-              </button>
-              <button
-                onClick={() => handleTranslate('de', 'Almanca')}
-                className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-xs transition-colors"
-              >
-                🇩🇪 Almanca
-              </button>
-              <button
-                onClick={() => handleTranslate('es', 'İspanyolca')}
-                className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-xs transition-colors"
-              >
-                🇪🇸 İspanyolca
-              </button>
-            </div>
-          )}
-        </div>
+      <Sep />
 
-        {/* Proofread Page Button */}
-        <button
-          onClick={() => setProofreadOpen(!isProofreadOpen)}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded transition-colors ${
-            isProofreadOpen
-              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium'
-              : 'hover:bg-black/5 dark:hover:bg-white/5 text-content-light dark:text-content-dark'
-          }`}
-          title="Sayfa Genelinde Hataları Düzelt (Ctrl+Shift+E)"
-        >
-          <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Hataları Düzelt</span>
-        </button>
+      <Btn onClick={() => chain().toggleBold().run()} active={editor.isActive('bold')} title="Kalın (Ctrl+B)">
+        <Bold className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleItalic().run()} active={editor.isActive('italic')} title="İtalik (Ctrl+I)">
+        <Italic className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleUnderline().run()} active={editor.isActive('underline')} title="Altı çizili (Ctrl+U)">
+        <UnderlineIcon className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleStrike().run()} active={editor.isActive('strike')} title="Üstü çizili">
+        <Strikethrough className="w-4 h-4" />
+      </Btn>
 
-        {/* AI Article Button */}
-        <button
-          onClick={() => setArticleOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1 rounded bg-accent text-white font-medium hover:bg-accent-hover shadow-sm transition-all"
-          title="Yapay Zeka ile Makale Yazdır (Ctrl+J)"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>✨ AI ile Makale</span>
-        </button>
+      <Sep />
 
-        {/* Settings Button */}
+      <Btn onClick={() => chain().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Sola hizala">
+        <AlignLeft className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Ortala">
+        <AlignCenter className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Sağa hizala">
+        <AlignRight className="w-4 h-4" />
+      </Btn>
+
+      <Sep />
+
+      <Btn onClick={() => chain().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Madde işaretli liste">
+        <List className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numaralı liste">
+        <ListOrdered className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleTaskList().run()} active={editor.isActive('taskList')} title="Yapılacaklar listesi">
+        <ListTodo className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Alıntı">
+        <Quote className="w-4 h-4" />
+      </Btn>
+
+      <Sep />
+
+      <Btn onClick={handleAddLink} active={editor.isActive('link')} title="Bağlantı ekle">
+        <LinkIcon className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={handleAddImage} title="Görsel ekle">
+        <ImageIcon className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Tablo ekle">
+        <TableIcon className="w-4 h-4" />
+      </Btn>
+
+      <div className="relative shrink-0" ref={insertRef}>
         <button
-          onClick={() => setSettingsOpen(true)}
-          className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-content-mutedLight dark:text-content-mutedDark hover:text-content-light dark:hover:text-content-dark transition-colors"
-          title="Ayarlar (API, Model, Tema)"
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpenMenu(openMenu === 'insert' ? null : 'insert')}
+          data-active={openMenu === 'insert'}
+          className="icon-btn w-auto px-1.5 gap-0.5"
+          title="Diğer bloklar"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === 'insert'}
         >
-          <Settings className="w-3.5 h-3.5" />
+          <Plus className="w-4 h-4" />
+          <ChevronDown className="w-3 h-3" />
         </button>
+        {openMenu === 'insert' && (
+          <div className="menu absolute right-0 top-full mt-2 w-48" role="menu">
+            {insertItems.map((it) => (
+              <button
+                key={it.label}
+                role="menuitem"
+                onClick={() => {
+                  it.run();
+                  setOpenMenu(null);
+                }}
+                className="menu-item"
+              >
+                <span className="text-muted">{it.icon}</span>
+                {it.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

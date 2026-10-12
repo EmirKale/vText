@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Sparkles, Loader2, AlertCircle, ArrowUpCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, ArrowUpCircle, RotateCw, Square } from 'lucide-react';
 import { UpdateStatusData } from '../../../shared/types';
 
 interface StatusBarProps {
@@ -8,7 +8,7 @@ interface StatusBarProps {
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({ text }) => {
-  const { aiStatus, aiStatusMessage, lastTokensUsed, currentRequestId } = useAppStore();
+  const { aiStatus, aiStatusMessage, lastTokensUsed, currentRequestId, settings } = useAppStore();
   const [updateData, setUpdateData] = useState<UpdateStatusData | null>(null);
 
   useEffect(() => {
@@ -17,77 +17,77 @@ export const StatusBar: React.FC<StatusBarProps> = ({ text }) => {
     return () => unsub();
   }, []);
 
-  // Statistics calculation
-  const cleanText = text.replace(/<[^>]*>/g, ' ').trim();
-  const words = cleanText.length > 0 ? cleanText.split(/\s+/).filter(Boolean).length : 0;
-  const chars = cleanText.length;
-  const readingTime = Math.ceil(words / 200);
+  const { words, chars, readingTime } = useMemo(() => {
+    const clean = text.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const w = clean.length > 0 ? clean.split(' ').filter(Boolean).length : 0;
+    return { words: w, chars: clean.length, readingTime: Math.max(1, Math.ceil(w / 200)) };
+  }, [text]);
 
   const handleAbort = () => {
-    if (currentRequestId && window.kalem?.ai) {
-      window.kalem.ai.abort(currentRequestId);
-    }
+    if (currentRequestId && window.kalem?.ai) window.kalem.ai.abort(currentRequestId);
   };
 
+  const modelShort = settings.textModel?.split('/').pop();
+
   return (
-    <div className="h-6 flex items-center justify-between px-3 text-[11px] border-t border-border-light dark:border-border-dark bg-canvas-light/90 dark:bg-canvas-dark/90 text-content-mutedLight dark:text-content-mutedDark select-none">
-      {/* Left stats */}
-      <div className="flex items-center gap-3">
-        <span>Sayfa 1</span>
-        <span>•</span>
-        <span><strong>{words.toLocaleString()}</strong> Kelime</span>
-        <span>•</span>
-        <span><strong>{chars.toLocaleString()}</strong> Karakter</span>
-        <span>•</span>
-        <span>~{readingTime} dk okuma</span>
+    <footer className="h-7 shrink-0 flex items-center justify-between px-3 text-2xs text-muted bg-chrome border-t border-line select-none tabular-nums">
+      <div className="flex items-center gap-4">
+        <span><span className="text-ink font-medium">{words.toLocaleString('tr-TR')}</span> kelime</span>
+        <span><span className="text-ink font-medium">{chars.toLocaleString('tr-TR')}</span> karakter</span>
+        <span>yaklaşık {readingTime} dk okuma</span>
       </div>
 
-      {/* Right AI & Token & Update status */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
         {updateData?.status === 'downloaded' && (
           <button
             onClick={() => window.kalem?.updater?.install()}
-            className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium hover:underline cursor-pointer"
-            title="Uygulamayı yeniden başlat ve güncellemeyi uygula"
+            className="flex items-center gap-1 text-success font-medium hover:underline"
+            title="Yeniden başlat ve güncellemeyi yükle"
           >
-            <CheckCircle2 className="w-3 h-3" />
-            <span>v{updateData.version} hazır (Yükle)</span>
+            <RotateCw className="w-3 h-3" />
+            v{updateData.version} hazır, yeniden başlat
           </button>
         )}
         {updateData?.status === 'downloading' && (
-          <div className="flex items-center gap-1 text-accent font-medium">
-            <ArrowUpCircle className="w-3 h-3 animate-pulse" />
-            <span>Güncelleme (%{updateData.percent ?? 0})</span>
-          </div>
+          <span className="flex items-center gap-1 text-accent">
+            <ArrowUpCircle className="w-3 h-3" />
+            Güncelleme indiriliyor %{updateData.percent ?? 0}
+          </span>
         )}
 
-        {lastTokensUsed !== undefined && (
-          <span className="opacity-80">Son Token: {lastTokensUsed.toLocaleString()}</span>
+        {lastTokensUsed !== undefined && aiStatus !== 'working' && (
+          <span title="Son istekte kullanılan token">{lastTokensUsed.toLocaleString('tr-TR')} token</span>
         )}
 
         {aiStatus === 'working' ? (
-          <div className="flex items-center gap-1.5 text-accent font-medium">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span>{aiStatusMessage || 'Yapay Zeka Çalışıyor...'}</span>
-            <button
-              onClick={handleAbort}
-              className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
-            >
-              Durdur
-            </button>
+          <div className="flex items-center gap-2 text-ink">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inset-0 rounded-full bg-marker animate-ping opacity-70" />
+              <span className="relative w-2 h-2 rounded-full bg-marker" />
+            </span>
+            <span className="font-medium">{aiStatusMessage || 'Yapay zekâ çalışıyor…'}</span>
+            {currentRequestId && (
+              <button
+                onClick={handleAbort}
+                className="flex items-center gap-1 h-5 px-1.5 rounded text-danger hover:bg-danger/10 transition-colors"
+              >
+                <Square className="w-2.5 h-2.5 fill-current" />
+                Durdur
+              </button>
+            )}
           </div>
         ) : aiStatus === 'error' ? (
-          <div className="flex items-center gap-1 text-red-500 font-medium">
+          <div className="flex items-center gap-1.5 text-danger font-medium" title={aiStatusMessage}>
             <AlertCircle className="w-3 h-3" />
-            <span className="truncate max-w-[200px]">{aiStatusMessage || 'AI Hatası'}</span>
+            <span className="truncate max-w-[260px]">{aiStatusMessage || 'Yapay zekâ isteği başarısız oldu'}</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-            <Sparkles className="w-3 h-3" />
-            <span>AI Hazır</span>
+          <div className="flex items-center gap-1.5" title={settings.textModel}>
+            <span className={`w-2 h-2 rounded-full ${settings.hasApiKey ? 'bg-marker' : 'bg-line'}`} />
+            <span>{settings.hasApiKey ? modelShort : 'API anahtarı eklenmedi'}</span>
           </div>
         )}
       </div>
-    </div>
+    </footer>
   );
 };

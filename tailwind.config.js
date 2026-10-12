@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
   darkMode: 'class',
   content: [
@@ -8,40 +10,67 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Semantic tokens (driven by CSS variables in globals.css, auto light/dark)
+        desk: v('desk'),         // app background behind the paper
+        chrome: v('chrome'),     // title bar, rails, panels
+        paper: v('paper'),       // document page & raised surfaces
+        ink: v('ink'),           // primary text
+        muted: v('muted'),       // secondary text
+        line: v('line'),         // hairlines & borders
         accent: {
-          DEFAULT: '#6366F1',
-          hover: '#4F46E5',
-          light: '#EEF2FF',
-          dark: '#312E81'
+          DEFAULT: v('accent'),
+          hover: v('accent-hover'),
+          on: v('on-accent')
         },
-        surface: {
-          light: '#FFFFFF',
-          dark: '#1E1F23'
+        marker: {                // highlighter yellow — the AI colour
+          DEFAULT: v('marker'),
+          ink: v('marker-ink')
         },
-        canvas: {
-          light: '#F5F5F4',
-          dark: '#17181B'
-        },
-        border: {
-          light: '#E5E7EB',
-          dark: '#2E3036'
-        },
-        content: {
-          light: '#1F2937',
-          dark: '#E5E7EB',
-          mutedLight: '#6B7280',
-          mutedDark: '#9CA3AF'
-        }
+        danger: v('danger'),
+        success: v('success'),
+
+        // Legacy aliases so any older class names keep working
+        surface: { light: v('paper'), dark: v('paper') },
+        canvas: { light: v('desk'), dark: v('desk') },
+        border: { light: v('line'), dark: v('line') },
+        content: { light: v('ink'), dark: v('ink'), mutedLight: v('muted'), mutedDark: v('muted') }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Onest', 'Segoe UI Variable', 'Segoe UI', 'system-ui', 'sans-serif'],
+        serif: ['Literata', 'Georgia', 'Cambria', 'serif'],
         mono: ['JetBrains Mono', 'Consolas', 'Courier New', 'monospace']
       },
+      fontSize: {
+        '2xs': ['10.5px', { lineHeight: '14px' }],
+        ui: ['12.5px', { lineHeight: '18px' }]
+      },
       boxShadow: {
-        page: '0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03)',
-        card: '0 2px 8px -1px rgba(0, 0, 0, 0.08)'
+        paper: '0 1px 0 rgb(var(--shadow) / 0.04), 0 12px 32px -12px rgb(var(--shadow) / 0.18)',
+        float: '0 1px 2px rgb(var(--shadow) / 0.06), 0 8px 24px -6px rgb(var(--shadow) / 0.22)',
+        modal: '0 24px 64px -16px rgb(var(--shadow) / 0.45)'
+      },
+      keyframes: {
+        pop: {
+          from: { opacity: '0', transform: 'translateY(4px) scale(0.98)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' }
+        },
+        drawer: {
+          from: { opacity: '0', transform: 'translateX(12px)' },
+          to: { opacity: '1', transform: 'translateX(0)' }
+        },
+        fade: { from: { opacity: '0' }, to: { opacity: '1' } },
+        sweep: {
+          '0%': { backgroundPosition: '-100% 0' },
+          '100%': { backgroundPosition: '200% 0' }
+        }
+      },
+      animation: {
+        pop: 'pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1)',
+        drawer: 'drawer 200ms cubic-bezier(0.2, 0.9, 0.3, 1)',
+        fade: 'fade 160ms ease-out',
+        sweep: 'sweep 1.6s linear infinite'
       }
     }
   },
   plugins: []
-}
+};

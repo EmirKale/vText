@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { TitleBar } from './components/TitleBar';
-import { TabBar } from './components/TabBar';
 import { Toolbar } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
+import { AiRail } from './components/AiRail';
 import { ArticleDialog } from './components/ArticleDialog';
 import { ImageDialog } from './components/ImageDialog';
 import { ProofreadPanel } from './components/ProofreadPanel';
@@ -12,6 +12,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { TipTapEditor } from './editor/TipTapEditor';
 import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
+import { applyTheme } from './lib/theme';
 
 export const App: React.FC = () => {
   const {
@@ -37,20 +38,7 @@ export const App: React.FC = () => {
     if (window.kalem) {
       window.kalem.settings.get().then((loaded) => {
         updateSettings(loaded);
-        // Apply theme class to DOM
-        if (loaded.theme === 'dark') {
-          document.documentElement.classList.add('dark');
-        } else if (loaded.theme === 'light') {
-          document.documentElement.classList.remove('dark');
-        } else {
-          // System theme — check OS preference
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (prefersDark) {
-            document.documentElement.classList.add('dark');
-          } else {
-            document.documentElement.classList.remove('dark');
-          }
-        }
+        applyTheme(loaded.theme);
       });
 
       // Listen for files opened via Windows file association / double-click
@@ -64,6 +52,15 @@ export const App: React.FC = () => {
       return () => unsubscribe();
     }
   }, []);
+
+  // Follow OS theme changes while the preference is "system"
+  useEffect(() => {
+    if (settings.theme !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyTheme('system');
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [settings.theme]);
 
   // Keyboard Shortcuts (Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+J, Ctrl+Shift+E, F11)
   useEffect(() => {
@@ -198,36 +195,35 @@ export const App: React.FC = () => {
     <div
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="flex flex-col h-screen w-screen bg-canvas-light dark:bg-canvas-dark text-content-light dark:text-content-dark overflow-hidden font-sans select-none"
+      className="flex flex-col h-screen w-screen bg-desk text-ink overflow-hidden font-sans select-none"
     >
-      {/* TitleBar */}
       <TitleBar />
 
-      {/* When in Focus Mode, hide Toolbar, TabBar, StatusBar for maximum concentration */}
-      {!isFocusMode && (
-        <>
-          <TabBar />
-          <Toolbar editor={editorInstance} />
-        </>
-      )}
-
-      {/* Editor & Sidebars Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
-        <TipTapEditor
-          key={activeTab.id}
-          content={activeTab.content}
-          onUpdate={(html) => updateTabContent(activeTab.id, html)}
-          onEditorReady={(editor) => setEditorInstance(editor)}
-        />
+        {/* Document column */}
+        <main className="relative flex-1 flex min-w-0">
+          {!isFocusMode && (
+            <div className="absolute top-3 inset-x-0 z-30 flex justify-center px-4 pointer-events-none">
+              <div className="pointer-events-auto max-w-full">
+                <Toolbar editor={editorInstance} />
+              </div>
+            </div>
+          )}
 
-        {/* Proofreading Sidebar Panel */}
+          <TipTapEditor
+            key={activeTab.id}
+            content={activeTab.content}
+            onUpdate={(html) => updateTabContent(activeTab.id, html)}
+            onEditorReady={(editor) => setEditorInstance(editor)}
+          />
+        </main>
+
         <ProofreadPanel editor={editorInstance} />
+        {!isFocusMode && <AiRail editor={editorInstance} />}
       </div>
 
-      {/* StatusBar */}
       {!isFocusMode && <StatusBar text={activeTab.content} />}
 
-      {/* Dialogs */}
       <ArticleDialog editor={editorInstance} />
       <ImageDialog editor={editorInstance} />
       <SettingsModal />

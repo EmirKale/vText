@@ -7,6 +7,10 @@ interface VTextLogoProps {
   textSize?: string;
 }
 
+/**
+ * vText mark: an ink "v" written over a highlighter stroke —
+ * the document (ink) and the assistant (highlighter) in one glyph.
+ */
 export const VTextLogo: React.FC<VTextLogoProps> = ({
   className = '',
   size = 20,
@@ -15,50 +19,20 @@ export const VTextLogo: React.FC<VTextLogoProps> = ({
 }) => {
   return (
     <div className={`inline-flex items-center gap-2 select-none ${className}`}>
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 48 48"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="shrink-0 drop-shadow-xs"
-      >
-        <defs>
-          <linearGradient id="vTextGrad" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#38BDF8" />
-            <stop offset="0.5" stopColor="#6366F1" />
-            <stop offset="1" stopColor="#8B5CF6" />
-          </linearGradient>
-          <linearGradient id="vTextBgGrad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#38BDF8" stopOpacity="0.2" />
-            <stop offset="1" stopColor="#6366F1" stopOpacity="0.08" />
-          </linearGradient>
-        </defs>
-
-        {/* Rounded badge background */}
-        <rect x="4" y="4" width="40" height="40" rx="10" fill="url(#vTextBgGrad)" stroke="url(#vTextGrad)" strokeWidth="1.2" strokeOpacity="0.4" />
-
-        {/* Document subtle lines */}
-        <line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="opacity-30" />
-        <line x1="18" y1="19" x2="26" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="opacity-30" />
-
-        {/* Dynamic Stylized 'V' */}
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className="shrink-0" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" className="fill-ink" />
+        <path d="M6 21.5 L26 18.5 L26.6 23 L6.6 26 Z" className="fill-marker" />
         <path
-          d="M13 16L22.6 33.8C23.2 34.9 24.8 34.9 25.4 33.8L35 16"
-          stroke="url(#vTextGrad)"
-          strokeWidth="4"
+          d="M9 8.5 L15.2 22.5 C15.5 23.2 16.5 23.2 16.8 22.5 L23 8.5"
+          className="stroke-paper"
+          strokeWidth="3.2"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-
-        {/* Glowing tip accent */}
-        <circle cx="35" cy="16" r="2.2" fill="#38BDF8" />
       </svg>
 
       {showText && (
-        <span className={`font-semibold tracking-tight ${textSize} text-content-light dark:text-content-dark`}>
-          <span className="text-accent font-bold">v</span>Text
-        </span>
+        <span className={`font-semibold tracking-[-0.02em] text-ink ${textSize}`}>vText</span>
       )}
     </div>
   );
