@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Editor } from '@tiptap/react';
+import { useAppStore } from '../store/useAppStore';
 import {
   Bold,
   Italic,
@@ -113,6 +114,7 @@ const Btn: React.FC<{
 );
 
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
+  const { setToolbarMenuOpen } = useAppStore();
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [openMenu, setOpenMenu] = useState<null | 'block' | 'insert' | 'font' | 'size' | 'color' | 'highlight' | 'spacing' | 'table'>(null);
   const spacingRef = useRef<HTMLDivElement>(null);
@@ -133,6 +135,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   useOutside(highlightRef, () => setOpenMenu(null), openMenu === 'highlight');
   useOutside(spacingRef, () => setOpenMenu(null), openMenu === 'spacing');
   useOutside(tableRef, () => setOpenMenu(null), openMenu === 'table');
+
+  // Sync toolbar menu open state with global store so BubbleMenu hides
+  useEffect(() => {
+    setToolbarMenuOpen(openMenu !== null);
+  }, [openMenu, setToolbarMenuOpen]);
+
+  useEffect(() => {
+    return () => setToolbarMenuOpen(false);
+  }, []);
 
   // Re-render on every selection / content change so active states stay accurate
   useEffect(() => {

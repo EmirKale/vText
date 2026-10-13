@@ -20,6 +20,7 @@ interface AppState {
   isProofreadOpen: boolean;
   isImageOpen: boolean;
   isSettingsOpen: boolean;
+  isToolbarMenuOpen: boolean;
   selectedTextForAi?: string;
 
   // Proofread Results
@@ -45,6 +46,7 @@ interface AppState {
   setProofreadOpen: (open: boolean) => void;
   setImageOpen: (open: boolean, text?: string) => void;
   setSettingsOpen: (open: boolean) => void;
+  setToolbarMenuOpen: (open: boolean) => void;
   setProofreadItems: (items: ProofreadItem[]) => void;
   removeProofreadItem: (id: string) => void;
   setProofreadProgress: (p: { processed: number; total: number } | null) => void;
@@ -90,6 +92,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isProofreadOpen: false,
   isImageOpen: false,
   isSettingsOpen: false,
+  isToolbarMenuOpen: false,
   selectedTextForAi: undefined,
 
   proofreadItems: [],
@@ -178,6 +181,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProofreadOpen: (open) => set({ isProofreadOpen: open }),
   setImageOpen: (open, text) => set({ isImageOpen: open, selectedTextForAi: text }),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
+  setToolbarMenuOpen: (open) => set({ isToolbarMenuOpen: open }),
 
   setProofreadItems: (items) => set({ proofreadItems: items }),
   removeProofreadItem: (id) => set(state => ({

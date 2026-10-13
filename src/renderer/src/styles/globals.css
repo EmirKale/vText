@@ -434,7 +434,87 @@
   border-top-color: #6366f1;
 }
 @media print {
-  .ProseMirror .page-break { border: 0; height: 0; margin: 0; break-after: page; }
-  .ProseMirror .page-break::after { display: none; }
-  .search-match, .search-match-current { background: none !important; box-shadow: none !important; }
+  @page {
+    size: auto;
+    margin: 15mm 20mm;
+  }
+
+  /* Completely hide all UI elements */
+  .no-print,
+  .drag,
+  footer,
+  header,
+  nav,
+  aside,
+  [role="toolbar"],
+  [role="search"],
+  .menu,
+  .tiptap-bubble-menu,
+  .tiptap-floating-menu,
+  [data-tippy-root] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Reset outer containers so only the document prints */
+  html, body, #root {
+    background: #ffffff !important;
+    color: #111827 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .bg-desk {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+
+  .bg-paper {
+    background: #ffffff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    border: none !important;
+    outline: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+  }
+
+  .ProseMirror {
+    color: #111827 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .ProseMirror .page-break {
+    border: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .ProseMirror .page-break::after {
+    display: none !important;
+  }
+
+  .search-match, .search-match-current {
+    background: none !important;
+    box-shadow: none !important;
+  }
 }
+

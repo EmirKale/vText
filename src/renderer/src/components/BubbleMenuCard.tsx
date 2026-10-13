@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react';
 import { useAppStore } from '../store/useAppStore';
@@ -28,10 +28,12 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
     isImageOpen,
     isArticleOpen,
     isSettingsOpen,
+    isToolbarMenuOpen,
     setImageOpen,
     setAiStatus,
     setCurrentRequestId
   } = useAppStore();
+  const [isDismissed, setIsDismissed] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const [originalText, setOriginalText] = useState('');
   const [rewrittenText, setRewrittenText] = useState('');
@@ -44,6 +46,29 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
   const selectionRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
   // Store cleanup function for IPC listeners
   const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Re-enable bubble menu on new selection
+  useEffect(() => {
+    if (!editor) return;
+    const handleSel = () => setIsDismissed(false);
+    editor.on('selectionUpdate', handleSel);
+    return () => {
+      editor.off('selectionUpdate', handleSel);
+    };
+  }, [editor]);
+
+  // Pressing Escape dismisses the bubble menu
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDismissed(true);
+        setShowToneSubmenu(false);
+        setShowTranslateSubmenu(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   if (!editor) return null;
 
@@ -162,10 +187,27 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
           placement: 'top',
           offset: [0, 10],
           maxWidth: 'none',
-          zIndex: 40
+          zIndex: 25,
+          popperOptions: {
+            modifiers: [
+              {
+                name: 'flip',
+                options: {
+                  fallbackPlacements: ['bottom', 'top'],
+                  padding: { top: 96, bottom: 24, left: 16, right: 16 }
+                }
+              },
+              {
+                name: 'preventOverflow',
+                options: {
+                  padding: { top: 88, bottom: 24, left: 16, right: 16 }
+                }
+              }
+            ]
+          }
         }}
         shouldShow={({ state, from, to }) => {
-          if (isImageOpen || isArticleOpen || isSettingsOpen) return false;
+          if (isToolbarMenuOpen || isImageOpen || isArticleOpen || isSettingsOpen || isDismissed) return false;
           if (showPreviewCard) return false;
           const text = state.doc.textBetween(from, to, ' ');
           return text.trim().length > 2;
@@ -237,6 +279,14 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
           <button onClick={handleGenerateImage} className={pillBtn} title="Seçili metinden görsel oluştur">
             <ImageIcon className="w-3.5 h-3.5" />
             Görsel
+          </button>
+
+          <button
+            onClick={() => setIsDismissed(true)}
+            className="w-6 h-6 rounded-md text-muted hover:text-ink hover:bg-ink/[0.06] flex items-center justify-center transition-colors ml-0.5 shrink-0"
+            title="Kapat (Esc)"
+          >
+            <X className="w-3 h-3" />
           </button>
         </div>
       </BubbleMenu>

@@ -135,7 +135,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
 
   return (
     <div
-      className={`flex-1 w-full h-full overflow-y-auto flex justify-center px-6 bg-desk ${
+      className={`flex-1 w-full h-full overflow-y-auto flex justify-center px-6 bg-desk print:bg-white print:p-0 print:m-0 print:overflow-visible print:h-auto print:block ${
         isFocusMode ? 'pt-16 pb-24' : 'pt-[76px] pb-24'
       }`}
       onMouseDown={(e) => {
@@ -146,11 +146,15 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
         }
       }}
     >
-      {editor && <BubbleMenuCard editor={editor} />}
+      {editor && (
+        <div className="no-print">
+          <BubbleMenuCard editor={editor} />
+        </div>
+      )}
 
       <div
         style={{ fontSize: `${settings.fontSize}px` }}
-        className={`w-full h-fit transition-[max-width,padding] duration-200 ${
+        className={`w-full h-fit transition-[max-width,padding] duration-200 print:shadow-none print:ring-0 print:border-none print:m-0 print:p-0 print:max-w-none print:bg-transparent print:text-black print:min-h-0 ${
           viewMode === 'page' && !isFocusMode
             ? `${pageOrientation === 'landscape' ? 'max-w-[1056px] min-h-[816px]' : 'max-w-[816px] min-h-[1056px]'} ${
                 pageMargin === 'narrow'

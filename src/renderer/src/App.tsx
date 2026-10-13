@@ -224,15 +224,17 @@ export const App: React.FC = () => {
     <div
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="flex flex-col h-screen w-screen bg-desk text-ink overflow-hidden font-sans select-none"
+      className="flex flex-col h-screen w-screen bg-desk text-ink overflow-hidden font-sans select-none print:h-auto print:w-auto print:overflow-visible print:bg-white print:text-black print:block"
     >
-      <TitleBar />
+      <div className="no-print">
+        <TitleBar />
+      </div>
 
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative print:overflow-visible print:h-auto print:block">
         {/* Document column */}
-        <main className="relative flex-1 flex min-w-0">
+        <main className="relative flex-1 flex min-w-0 print:overflow-visible print:h-auto print:block">
           {!isFocusMode && (
-            <div className="absolute top-3 inset-x-0 z-30 flex justify-center px-4 pointer-events-none">
+            <div className="no-print absolute top-3 inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
               <div className="pointer-events-auto max-w-full">
                 <Toolbar editor={editorInstance} />
               </div>
@@ -247,26 +249,40 @@ export const App: React.FC = () => {
           />
 
           {findMode && (
-            <FindReplaceBar
-              key={activeTab.id}
-              editor={editorInstance}
-              mode={findMode}
-              onModeChange={setFindMode}
-              onClose={() => setFindMode(null)}
-            />
+            <div className="no-print">
+              <FindReplaceBar
+                key={activeTab.id}
+                editor={editorInstance}
+                mode={findMode}
+                onModeChange={setFindMode}
+                onClose={() => setFindMode(null)}
+              />
+            </div>
           )}
         </main>
 
-        <ProofreadPanel editor={editorInstance} />
-        {!isFocusMode && <AiRail editor={editorInstance} />}
+        <div className="no-print">
+          <ProofreadPanel editor={editorInstance} />
+        </div>
+        {!isFocusMode && (
+          <div className="no-print">
+            <AiRail editor={editorInstance} />
+          </div>
+        )}
       </div>
 
-      {!isFocusMode && <StatusBar text={activeTab.content} />}
+      {!isFocusMode && (
+        <div className="no-print">
+          <StatusBar text={activeTab.content} />
+        </div>
+      )}
 
-      <ArticleDialog editor={editorInstance} />
-      <ImageDialog editor={editorInstance} />
-      <SettingsModal />
-      <UpdateNotification />
+      <div className="no-print">
+        <ArticleDialog editor={editorInstance} />
+        <ImageDialog editor={editorInstance} />
+        <SettingsModal />
+        <UpdateNotification />
+      </div>
     </div>
   );
 };
