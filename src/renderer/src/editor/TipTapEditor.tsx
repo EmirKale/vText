@@ -16,10 +16,16 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import FontFamily from '@tiptap/extension-font-family';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
 import { common, createLowlight } from 'lowlight';
 
 import { PromptBlock } from './extensions/PromptBlock';
 import { Callout } from './extensions/Callout';
+import { FontSize } from './extensions/FontSize';
+import { SearchReplace } from './extensions/SearchReplace';
+import { LineHeight, PageBreak } from './extensions/Layout';
 import { BubbleMenuCard } from '../components/BubbleMenuCard';
 import { useAppStore } from '../store/useAppStore';
 
@@ -32,7 +38,7 @@ interface TipTapEditorProps {
 }
 
 export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, onEditorReady }) => {
-  const { viewMode, settings, isFocusMode } = useAppStore();
+  const { viewMode, settings, isFocusMode, pageMargin, pageOrientation } = useAppStore();
   const lastContentRef = useRef(content);
 
   const editor = useEditor({
@@ -46,9 +52,14 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       Underline,
       TextStyle,
       Color,
+      FontFamily,
+      FontSize,
+      Subscript,
+      Superscript,
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({
         types: ['heading', 'paragraph'],
+        alignments: ['left', 'center', 'right', 'justify'],
       }),
       Table.configure({
         resizable: true,
@@ -74,6 +85,9 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       }),
       PromptBlock,
       Callout,
+      SearchReplace,
+      LineHeight,
+      PageBreak,
     ],
     content,
     editorProps: {
@@ -138,7 +152,13 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
         style={{ fontSize: `${settings.fontSize}px` }}
         className={`w-full h-fit transition-[max-width,padding] duration-200 ${
           viewMode === 'page' && !isFocusMode
-            ? 'max-w-[816px] min-h-[1056px] px-[88px] py-[80px] bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60'
+            ? `${pageOrientation === 'landscape' ? 'max-w-[1056px] min-h-[816px]' : 'max-w-[816px] min-h-[1056px]'} ${
+                pageMargin === 'narrow'
+                  ? 'px-[44px] py-[40px]'
+                  : pageMargin === 'wide'
+                  ? 'px-[132px] py-[120px]'
+                  : 'px-[88px] py-[80px]'
+              } bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60`
             : 'max-w-[700px] px-2 py-4'
         }`}
       >

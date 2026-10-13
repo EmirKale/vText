@@ -6,6 +6,8 @@ interface AppState {
   activeTabId: string;
   viewMode: 'page' | 'stream';
   isFocusMode: boolean;
+  pageMargin: 'normal' | 'narrow' | 'wide';
+  pageOrientation: 'portrait' | 'landscape';
   
   // AI Status
   aiStatus: 'idle' | 'working' | 'error';
@@ -34,6 +36,8 @@ interface AppState {
   updateTabContent: (id: string, content: string) => void;
   updateTabMeta: (id: string, meta: Partial<DocumentTab>) => void;
   setViewMode: (mode: 'page' | 'stream') => void;
+  setPageMargin: (margin: 'normal' | 'narrow' | 'wide') => void;
+  setPageOrientation: (orientation: 'portrait' | 'landscape') => void;
   toggleFocusMode: () => void;
   setAiStatus: (status: 'idle' | 'working' | 'error', message?: string, tokens?: number) => void;
   setCurrentRequestId: (id?: string) => void;
@@ -74,6 +78,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTabId: initialTabId,
   viewMode: 'page',
   isFocusMode: false,
+  pageMargin: 'normal',
+  pageOrientation: 'portrait',
 
   aiStatus: 'idle',
   aiStatusMessage: undefined,
@@ -156,6 +162,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setViewMode: (mode) => set({ viewMode: mode }),
+  setPageMargin: (margin) => set({ pageMargin: margin }),
+  setPageOrientation: (orientation) => set({ pageOrientation: orientation }),
   toggleFocusMode: () => set(state => ({ isFocusMode: !state.isFocusMode })),
 
   setAiStatus: (status, message, tokens) => set({

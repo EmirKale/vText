@@ -49,8 +49,8 @@ export async function detectTools(): Promise<{ hasPandoc: boolean; hasLibreOffic
   }
 
   return {
-    hasPandoc: cachedPandoc,
-    hasLibreOffice: cachedLibreOffice
+    hasPandoc: !!cachedPandoc,
+    hasLibreOffice: !!cachedLibreOffice
   };
 }
 

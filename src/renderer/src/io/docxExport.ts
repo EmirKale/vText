@@ -10,10 +10,16 @@ import {
   WidthType,
   BorderStyle,
   AlignmentType,
-  ShadingType
+  ShadingType,
+  PageBreak,
+  PageOrientation
 } from 'docx';
 
-export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string = 'Belge'): Promise<Uint8Array> {
+export async function exportTipTapJsonToDocx(
+  docJson: any,
+  documentTitle: string = 'Belge',
+  options?: { margin?: 'normal' | 'narrow' | 'wide'; orientation?: 'portrait' | 'landscape' }
+): Promise<Uint8Array> {
   const children: any[] = [];
 
   function processMarks(text: string, marks?: any[]): TextRun {
@@ -21,7 +27,12 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
     let italics = false;
     let underline = false;
     let strike = false;
+    let subScript = false;
+    let superScript = false;
     let font = 'Inter';
+    let size = 24; // 12pt (docx uses half-points)
+    let color: string | undefined;
+    let shading: any;
 
     if (marks) {
       for (const m of marks) {
@@ -29,7 +40,21 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
         if (m.type === 'italic') italics = true;
         if (m.type === 'underline') underline = true;
         if (m.type === 'strike') strike = true;
+        if (m.type === 'subscript') subScript = true;
+        if (m.type === 'superscript') superScript = true;
         if (m.type === 'code') font = 'Consolas';
+        if (m.type === 'textStyle') {
+          if (m.attrs?.fontFamily) font = String(m.attrs.fontFamily).split(',')[0].replace(/['"]/g, '').trim();
+          if (m.attrs?.fontSize) {
+            const n = parseFloat(m.attrs.fontSize);
+            if (!isNaN(n)) size = Math.round(String(m.attrs.fontSize).includes('px') ? n * 0.75 * 2 : n * 2);
+          }
+          if (m.attrs?.color && /^#?[0-9a-f]{6}$/i.test(m.attrs.color)) color = m.attrs.color.replace('#', '');
+        }
+        if (m.type === 'highlight') {
+          const c = (m.attrs?.color || '#FFF59D').replace('#', '');
+          if (/^[0-9a-f]{6}$/i.test(c)) shading = { type: ShadingType.CLEAR, color: 'auto', fill: c };
+        }
       }
     }
 
@@ -39,23 +64,36 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
       italics,
       underline: underline ? {} : undefined,
       strike,
+      subScript,
+      superScript,
       font,
-      size: 24 // 12pt (docx uses half-points)
+      size,
+      color,
+      shading
     });
   }
 
-  function getAlignment(align?: string): AlignmentType {
+  function getAlignment(align?: string): (typeof AlignmentType)[keyof typeof AlignmentType] {
     if (align === 'center') return AlignmentType.CENTER;
     if (align === 'right') return AlignmentType.RIGHT;
     if (align === 'justify') return AlignmentType.JUSTIFIED;
     return AlignmentType.LEFT;
   }
 
+  /** CSS line-height multiplier → docx "line" (240 = single spacing). */
+  function lineOf(lh: any, fallback?: number): number | undefined {
+    const n = parseFloat(lh);
+    return !isNaN(n) && n > 0 ? Math.round(n * 240) : fallback;
+  }
+
   function convertNode(node: any): any {
     switch (node.type) {
+      case 'pageBreak':
+        return new Paragraph({ children: [new PageBreak()] });
+
       case 'heading': {
         const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks));
-        let level = HeadingLevel.HEADING_1;
+        let level: any = HeadingLevel.HEADING_1;
         if (node.attrs?.level === 2) level = HeadingLevel.HEADING_2;
         if (node.attrs?.level === 3) level = HeadingLevel.HEADING_3;
 
@@ -63,7 +101,7 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
           children: runs,
           heading: level,
           alignment: getAlignment(node.attrs?.textAlign),
-          spacing: { before: 240, after: 120 }
+          spacing: { before: 240, after: 120, line: lineOf(node.attrs?.lineHeight) }
         });
       }
 
@@ -72,7 +110,7 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
         return new Paragraph({
           children: runs,
           alignment: getAlignment(node.attrs?.textAlign),
-          spacing: { after: 160, line: 360 }
+          spacing: { after: 160, line: lineOf(node.attrs?.lineHeight, 360) }
         });
       }
 
@@ -194,17 +232,26 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
     children.push(new Paragraph({ text: '' }));
   }
 
+  const marginDxa =
+    options?.margin === 'narrow' ? 720 : options?.margin === 'wide' ? 2880 : 1440;
+  const isLandscape = options?.orientation === 'landscape';
+
   const doc = new Document({
     title: documentTitle,
     sections: [
       {
         properties: {
           page: {
+            size: {
+              orientation: isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+              width: isLandscape ? 16838 : 11906,
+              height: isLandscape ? 11906 : 16838
+            },
             margin: {
-              top: 1440, // 1 inch in dxa
-              bottom: 1440,
-              left: 1440,
-              right: 1440
+              top: marginDxa,
+              bottom: marginDxa,
+              left: marginDxa,
+              right: marginDxa
             }
           }
         },
@@ -213,5 +260,6 @@ export async function exportTipTapJsonToDocx(docJson: any, documentTitle: string
     ]
   });
 
-  return Packer.toUint8Array(doc);
+  const buffer = await Packer.toArrayBuffer(doc);
+  return new Uint8Array(buffer);
 }

@@ -17,7 +17,9 @@ export const UpdateNotification: React.FC = () => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   if (isDismissed || !updateData) return null;

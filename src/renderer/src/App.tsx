@@ -10,6 +10,7 @@ import { ProofreadPanel } from './components/ProofreadPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateNotification } from './components/UpdateNotification';
 import { TipTapEditor } from './editor/TipTapEditor';
+import { FindReplaceBar } from './components/FindReplaceBar';
 import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
 import { applyTheme } from './lib/theme';
@@ -27,10 +28,13 @@ export const App: React.FC = () => {
     isProofreadOpen,
     setProofreadOpen,
     settings,
-    updateSettings
+    updateSettings,
+    pageMargin,
+    pageOrientation
   } = useAppStore();
 
   const [editorInstance, setEditorInstance] = useState<any>(null);
+  const [findMode, setFindMode] = useState<null | 'find' | 'replace'>(null);
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
   // Initialize settings and open-file listener
@@ -49,7 +53,9 @@ export const App: React.FC = () => {
         }
       });
 
-      return () => unsubscribe();
+      return () => {
+        unsubscribe();
+      };
     }
   }, []);
 
@@ -73,6 +79,17 @@ export const App: React.FC = () => {
       }
 
       if (e.ctrlKey) {
+        // Ctrl+F: Bul / Ctrl+H: Bul ve Değiştir
+        if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+          e.preventDefault();
+          setFindMode('find');
+          return;
+        }
+        if (!e.shiftKey && (e.key === 'h' || e.key === 'H')) {
+          e.preventDefault();
+          setFindMode('replace');
+          return;
+        }
         // Ctrl+N: Yeni Belge
         if (e.key === 'n' || e.key === 'N') {
           e.preventDefault();
@@ -98,6 +115,13 @@ export const App: React.FC = () => {
         if (e.key === 's' || e.key === 'S') {
           e.preventDefault();
           handleSaveFile(false);
+          return;
+        }
+
+        // Ctrl+P: Yazdır
+        if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          window.print();
           return;
         }
 
@@ -141,10 +165,15 @@ export const App: React.FC = () => {
       targetPath = chosen;
     }
 
+    if (!targetPath) return;
+
     try {
       if (targetPath.endsWith('.docx')) {
         const json = editorInstance.getJSON();
-        const docxBuffer = await exportTipTapJsonToDocx(json, activeTab.title);
+        const docxBuffer = await exportTipTapJsonToDocx(json, activeTab.title, {
+          margin: pageMargin,
+          orientation: pageOrientation
+        });
         await window.kalem.files.save(targetPath, docxBuffer);
       } else if (targetPath.endsWith('.md')) {
         const json = editorInstance.getJSON();
@@ -216,6 +245,16 @@ export const App: React.FC = () => {
             onUpdate={(html) => updateTabContent(activeTab.id, html)}
             onEditorReady={(editor) => setEditorInstance(editor)}
           />
+
+          {findMode && (
+            <FindReplaceBar
+              key={activeTab.id}
+              editor={editorInstance}
+              mode={findMode}
+              onModeChange={setFindMode}
+              onClose={() => setFindMode(null)}
+            />
+          )}
         </main>
 
         <ProofreadPanel editor={editorInstance} />

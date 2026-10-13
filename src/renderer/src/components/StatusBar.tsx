@@ -14,7 +14,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({ text }) => {
   useEffect(() => {
     if (!window.kalem?.updater) return;
     const unsub = window.kalem.updater.onStatus((data) => setUpdateData(data));
-    return () => unsub();
+    return () => {
+      unsub();
+    };
   }, []);
 
   const { words, chars, readingTime } = useMemo(() => {

@@ -45,7 +45,7 @@ export function tipTapJsonToMarkdown(node: any): string {
 
       case 'blockquote': {
         const text = (n.content || []).map((c: any) => serializeNode(c)).join('\n');
-        return text.split('\n').map(l => `> ${l}`).join('\n');
+        return text.split('\n').map((l: string) => `> ${l}`).join('\n');
       }
 
       case 'codeBlock': {

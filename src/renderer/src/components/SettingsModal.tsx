@@ -61,7 +61,9 @@ export const SettingsModal: React.FC = () => {
         setUpdateFeedback({ type: 'error', message: data.message || 'Güncelleme denetlenemedi.' });
       }
     });
-    return () => unsub();
+    return () => {
+      unsub();
+    };
   }, []);
 
   const loadSettingsAndModels = async () => {
