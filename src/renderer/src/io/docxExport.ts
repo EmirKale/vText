@@ -12,7 +12,8 @@ import {
   AlignmentType,
   ShadingType,
   PageBreak,
-  PageOrientation
+  PageOrientation,
+  ImageRun
 } from 'docx';
 
 export async function exportTipTapJsonToDocx(
@@ -96,20 +97,24 @@ export async function exportTipTapJsonToDocx(
         let level: any = HeadingLevel.HEADING_1;
         if (node.attrs?.level === 2) level = HeadingLevel.HEADING_2;
         if (node.attrs?.level === 3) level = HeadingLevel.HEADING_3;
+        const indentLeft = node.attrs?.indent ? Math.round(node.attrs.indent * 360) : undefined;
 
         return new Paragraph({
           children: runs,
           heading: level,
           alignment: getAlignment(node.attrs?.textAlign),
+          indent: indentLeft ? { left: indentLeft } : undefined,
           spacing: { before: 240, after: 120, line: lineOf(node.attrs?.lineHeight) }
         });
       }
 
       case 'paragraph': {
         const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks));
+        const indentLeft = node.attrs?.indent ? Math.round(node.attrs.indent * 360) : undefined;
         return new Paragraph({
           children: runs,
           alignment: getAlignment(node.attrs?.textAlign),
+          indent: indentLeft ? { left: indentLeft } : undefined,
           spacing: { after: 160, line: lineOf(node.attrs?.lineHeight, 360) }
         });
       }
@@ -117,6 +122,50 @@ export async function exportTipTapJsonToDocx(
       case 'blockquote': {
         const subParas = (node.content || []).map((c: any) => convertNode(c));
         return subParas;
+      }
+
+      case 'image': {
+        const src: string = node.attrs?.src || '';
+        if (src.startsWith('data:image/')) {
+          try {
+            const base64Data = src.split(',')[1];
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            let targetWidth = 460;
+            const wAttr = String(node.attrs?.width || '100%');
+            if (wAttr.endsWith('%')) {
+              const pct = parseFloat(wAttr) / 100;
+              targetWidth = Math.round(500 * (isNaN(pct) ? 1 : pct));
+            } else if (!isNaN(parseFloat(wAttr))) {
+              targetWidth = Math.min(500, Math.round(parseFloat(wAttr)));
+            }
+
+            const imgType: 'png' | 'jpg' | 'gif' | 'bmp' =
+              src.includes('jpeg') || src.includes('jpg') ? 'jpg' : src.includes('gif') ? 'gif' : 'png';
+
+            const align = getAlignment(node.attrs?.alignment);
+            return new Paragraph({
+              alignment: align,
+              children: [
+                new ImageRun({
+                  type: imgType,
+                  data: bytes,
+                  transformation: {
+                    width: targetWidth,
+                    height: Math.round(targetWidth * 0.6)
+                  }
+                })
+              ],
+              spacing: { before: 160, after: 160 }
+            });
+          } catch (e) {
+            console.error('Failed to export image to docx', e);
+          }
+        }
+        return null;
       }
 
       // Code Block & Prompt Block -> Single-cell table with gray background & Consolas

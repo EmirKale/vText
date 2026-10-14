@@ -12,7 +12,6 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -21,12 +20,15 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import { common, createLowlight } from 'lowlight';
 
+import { ResizableImage } from './extensions/ResizableImage';
 import { PromptBlock } from './extensions/PromptBlock';
 import { Callout } from './extensions/Callout';
 import { FontSize } from './extensions/FontSize';
 import { SearchReplace } from './extensions/SearchReplace';
 import { LineHeight, PageBreak } from './extensions/Layout';
+import { Indent } from './extensions/Indent';
 import { BubbleMenuCard } from '../components/BubbleMenuCard';
+import { ImageBubbleMenu } from '../components/ImageBubbleMenu';
 import { useAppStore } from '../store/useAppStore';
 
 const lowlight = createLowlight(common);
@@ -38,7 +40,16 @@ interface TipTapEditorProps {
 }
 
 export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, onEditorReady }) => {
-  const { viewMode, settings, isFocusMode, pageMargin, pageOrientation } = useAppStore();
+  const {
+    viewMode,
+    settings,
+    isFocusMode,
+    pageMargin,
+    pageOrientation,
+    isFormatPainterActive,
+    savedFormat,
+    clearFormatPainter
+  } = useAppStore();
   const lastContentRef = useRef(content);
 
   const editor = useEditor({
@@ -71,7 +82,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       TaskItem.configure({
         nested: true,
       }),
-      Image.configure({
+      ResizableImage.configure({
         inline: false,
         allowBase64: true,
       }),
@@ -88,6 +99,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       SearchReplace,
       LineHeight,
       PageBreak,
+      Indent,
     ],
     content,
     editorProps: {
@@ -133,6 +145,58 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
     }
   }, [content]);
 
+  // Format Painter: apply saved format to new selection
+  useEffect(() => {
+    if (!editor || !isFormatPainterActive || !savedFormat) return;
+
+    const handleSelectionUpdate = () => {
+      const { empty } = editor.state.selection;
+      if (empty) return;
+
+      const chain = editor.chain().focus();
+      chain.unsetAllMarks();
+
+      for (const m of savedFormat.marks) {
+        if (m.type === 'bold') chain.setBold();
+        else if (m.type === 'italic') chain.setItalic();
+        else if (m.type === 'underline') chain.setUnderline();
+        else if (m.type === 'strike') chain.setStrike();
+        else if (m.type === 'subscript') (chain as any).unsetSuperscript().setSubscript();
+        else if (m.type === 'superscript') (chain as any).unsetSubscript().setSuperscript();
+        else if (m.type === 'highlight') chain.setHighlight(m.attrs as any);
+        else if (m.type === 'textStyle') {
+          if (m.attrs?.color) chain.setColor(m.attrs.color);
+          if (m.attrs?.fontFamily) chain.setFontFamily(m.attrs.fontFamily);
+          if (m.attrs?.fontSize) (chain as any).setFontSize(m.attrs.fontSize);
+        }
+      }
+      if (savedFormat.textStyle) {
+        if (savedFormat.textStyle.color) chain.setColor(savedFormat.textStyle.color);
+        if (savedFormat.textStyle.fontFamily) chain.setFontFamily(savedFormat.textStyle.fontFamily);
+        if (savedFormat.textStyle.fontSize) (chain as any).setFontSize(savedFormat.textStyle.fontSize);
+      }
+      if (savedFormat.textAlign) chain.setTextAlign(savedFormat.textAlign);
+      if (savedFormat.lineHeight) (chain as any).setLineHeight(savedFormat.lineHeight);
+
+      chain.run();
+      clearFormatPainter();
+    };
+
+    editor.on('selectionUpdate', handleSelectionUpdate);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearFormatPainter();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      editor.off('selectionUpdate', handleSelectionUpdate);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [editor, isFormatPainterActive, savedFormat, clearFormatPainter]);
+
   return (
     <div
       className={`flex-1 w-full h-full overflow-y-auto flex justify-center px-6 bg-desk print:bg-white print:p-0 print:m-0 print:overflow-visible print:h-auto print:block ${
@@ -149,6 +213,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       {editor && (
         <div className="no-print">
           <BubbleMenuCard editor={editor} />
+          <ImageBubbleMenu editor={editor} />
         </div>
       )}
 

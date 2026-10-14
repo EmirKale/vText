@@ -207,6 +207,7 @@ export const BubbleMenuCard: React.FC<BubbleMenuCardProps> = ({ editor }) => {
           }
         }}
         shouldShow={({ state, from, to }) => {
+          if (editor.isActive('image')) return false;
           if (isToolbarMenuOpen || isImageOpen || isArticleOpen || isSettingsOpen || isDismissed) return false;
           if (showPreviewCard) return false;
           const text = state.doc.textBetween(from, to, ' ');

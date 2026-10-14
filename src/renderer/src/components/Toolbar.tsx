@@ -33,7 +33,11 @@ import {
   Highlighter,
   ArrowUpDown,
   FileDown,
-  Trash2
+  Trash2,
+  ListTree,
+  Paintbrush,
+  Indent as IndentIcon,
+  Outdent
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -114,7 +118,7 @@ const Btn: React.FC<{
 );
 
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
-  const { setToolbarMenuOpen } = useAppStore();
+  const { setToolbarMenuOpen, isFormatPainterActive, setSavedFormat, clearFormatPainter, setSymbolsOpen } = useAppStore();
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [openMenu, setOpenMenu] = useState<null | 'block' | 'insert' | 'font' | 'size' | 'color' | 'highlight' | 'spacing' | 'table'>(null);
   const spacingRef = useRef<HTMLDivElement>(null);
@@ -217,6 +221,50 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
       icon: <FileDown className="w-4 h-4" />,
       label: 'Sayfa sonu (Ctrl+Enter)',
       run: () => (chain() as any).setPageBreak().run()
+    },
+    {
+      icon: <ListTree className="w-4 h-4" />,
+      label: 'İçindekiler tablosu',
+      run: () => {
+        const headings: Array<{ level: number; text: string }> = [];
+        editor.state.doc.descendants((node) => {
+          if (node.type.name === 'heading') {
+            const text = node.textContent?.trim();
+            if (text) headings.push({ level: node.attrs.level || 1, text });
+          }
+        });
+        if (headings.length === 0) {
+          alert('İçindekiler tablosu eklemek için önce belgenize en az bir başlık ekleyin.');
+          return;
+        }
+        const listItems = headings
+          .map(
+            (h) =>
+              `<li style="margin-left: ${(h.level - 1) * 16}px; margin-bottom: 4px;">
+                <span>${h.level === 1 ? '• ' : '– '}<strong>${h.text}</strong></span>
+              </li>`
+          )
+          .join('');
+        const tocHtml = `
+          <div class="callout callout-info" data-callout="info" style="margin: 20px 0; padding: 14px 18px; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
+              📑 İÇİNDEKİLER
+            </p>
+            <ul style="list-style: none; padding-left: 0; margin: 0; font-size: 13.5px; line-height: 1.6;">
+              ${listItems}
+            </ul>
+          </div>
+          <p></p>
+        `;
+        chain().insertContent(tocHtml).run();
+      }
+    },
+    {
+      icon: <span className="font-serif font-bold text-sm leading-none">Ω</span>,
+      label: 'Özel simgeler ve karakterler',
+      run: () => {
+        setSymbolsOpen(true);
+      }
     }
   ];
 
@@ -235,6 +283,33 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   };
 
   const toggleMenu = (m: typeof openMenu) => setOpenMenu(openMenu === m ? null : m);
+
+  const handleToggleFormatPainter = () => {
+    if (isFormatPainterActive) {
+      clearFormatPainter();
+      return;
+    }
+    const marks: Array<{ type: string; attrs?: Record<string, any> }> = [];
+    ['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'code'].forEach((m) => {
+      if (editor.isActive(m)) marks.push({ type: m });
+    });
+    const textStyleAttrs = editor.getAttributes('textStyle') || {};
+    const highlightAttrs = editor.getAttributes('highlight') || {};
+    if (editor.isActive('highlight')) {
+      marks.push({ type: 'highlight', attrs: highlightAttrs });
+    }
+    const pAttrs = editor.getAttributes('paragraph') || {};
+    const hAttrs = editor.getAttributes('heading') || {};
+    const textAlign = pAttrs.textAlign || hAttrs.textAlign || (editor.isActive({ textAlign: 'center' }) ? 'center' : editor.isActive({ textAlign: 'right' }) ? 'right' : editor.isActive({ textAlign: 'justify' }) ? 'justify' : 'left');
+    const lineHeight = pAttrs.lineHeight || hAttrs.lineHeight;
+
+    setSavedFormat({
+      marks,
+      textStyle: textStyleAttrs,
+      textAlign,
+      lineHeight
+    });
+  };
 
   const Swatches: React.FC<{ colors: string[]; onPick: (c: string) => void; onReset: () => void; resetLabel: string }> = ({
     colors,
@@ -456,6 +531,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
         )}
       </div>
 
+      <Btn
+        onClick={handleToggleFormatPainter}
+        active={isFormatPainterActive}
+        title={isFormatPainterActive ? 'Biçim boyacısı etkin (Hedef metni seçin)' : 'Biçim boyacısı (Seçimin biçimini kopyala)'}
+      >
+        <Paintbrush className="w-4 h-4" />
+      </Btn>
       <Btn onClick={() => chain().unsetAllMarks().clearNodes().run()} title="Biçimlendirmeyi temizle">
         <RemoveFormatting className="w-4 h-4" />
       </Btn>
@@ -473,6 +555,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
       </Btn>
       <Btn onClick={() => chain().setTextAlign('justify').run()} active={editor.isActive({ textAlign: 'justify' })} title="İki yana yasla">
         <AlignJustify className="w-4 h-4" />
+      </Btn>
+
+      <Btn onClick={() => (chain() as any).outdent().run()} title="Girintiyi azalt (Shift+Tab)">
+        <Outdent className="w-4 h-4" />
+      </Btn>
+      <Btn onClick={() => (chain() as any).indent().run()} title="Girintiyi artır (Tab)">
+        <IndentIcon className="w-4 h-4" />
       </Btn>
 
       {/* Line spacing */}
@@ -641,6 +730,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           </div>
         )}
       </div>
+
+      <Btn onClick={() => setSymbolsOpen(true)} title="Özel karakter ve simgeler (Ω, ₺, ±, ©)">
+        <span className="font-serif font-bold text-sm leading-none text-ink">Ω</span>
+      </Btn>
 
       <div className="relative shrink-0" ref={insertRef}>
         <button

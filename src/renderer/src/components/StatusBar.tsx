@@ -8,7 +8,7 @@ interface StatusBarProps {
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({ text }) => {
-  const { aiStatus, aiStatusMessage, lastTokensUsed, currentRequestId, settings } = useAppStore();
+  const { aiStatus, aiStatusMessage, lastTokensUsed, currentRequestId, settings, setStatsOpen } = useAppStore();
   const [updateData, setUpdateData] = useState<UpdateStatusData | null>(null);
 
   useEffect(() => {
@@ -33,11 +33,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({ text }) => {
 
   return (
     <footer className="h-7 shrink-0 flex items-center justify-between px-3 text-2xs text-muted bg-chrome border-t border-line select-none tabular-nums">
-      <div className="flex items-center gap-4">
-        <span><span className="text-ink font-medium">{words.toLocaleString('tr-TR')}</span> kelime</span>
-        <span><span className="text-ink font-medium">{chars.toLocaleString('tr-TR')}</span> karakter</span>
+      <button
+        type="button"
+        onClick={() => setStatsOpen(true)}
+        className="flex items-center gap-3.5 hover:bg-ink/5 px-2 py-0.5 -ml-1 rounded transition-colors text-left group cursor-pointer"
+        title="Ayrıntılı belge istatistiklerini görüntüle (Sözcük, karakter, sayfa)"
+      >
+        <span><span className="text-ink font-medium group-hover:text-accent transition-colors">{words.toLocaleString('tr-TR')}</span> kelime</span>
+        <span><span className="text-ink font-medium group-hover:text-accent transition-colors">{chars.toLocaleString('tr-TR')}</span> karakter</span>
         <span>yaklaşık {readingTime} dk okuma</span>
-      </div>
+      </button>
 
       <div className="flex items-center gap-4">
         {updateData?.status === 'downloaded' && (

@@ -9,8 +9,11 @@ import { ImageDialog } from './components/ImageDialog';
 import { ProofreadPanel } from './components/ProofreadPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateNotification } from './components/UpdateNotification';
+import { SpecialCharactersModal } from './components/SpecialCharactersModal';
+import { DocumentStatisticsModal } from './components/DocumentStatisticsModal';
 import { TipTapEditor } from './editor/TipTapEditor';
 import { FindReplaceBar } from './components/FindReplaceBar';
+import { NavigatorPanel } from './components/NavigatorPanel';
 import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
 import { applyTheme } from './lib/theme';
@@ -30,7 +33,8 @@ export const App: React.FC = () => {
     settings,
     updateSettings,
     pageMargin,
-    pageOrientation
+    pageOrientation,
+    toggleNavigator
   } = useAppStore();
 
   const [editorInstance, setEditorInstance] = useState<any>(null);
@@ -138,6 +142,13 @@ export const App: React.FC = () => {
           setProofreadOpen(!isProofreadOpen);
           return;
         }
+
+        // Ctrl+Shift+O: Belge Gezgini
+        if (e.shiftKey && (e.key === 'o' || e.key === 'O')) {
+          e.preventDefault();
+          toggleNavigator();
+          return;
+        }
       }
     };
 
@@ -231,6 +242,8 @@ export const App: React.FC = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden relative print:overflow-visible print:h-auto print:block">
+        {!isFocusMode && <NavigatorPanel editor={editorInstance} />}
+
         {/* Document column */}
         <main className="relative flex-1 flex min-w-0 print:overflow-visible print:h-auto print:block">
           {!isFocusMode && (
@@ -282,6 +295,8 @@ export const App: React.FC = () => {
         <ImageDialog editor={editorInstance} />
         <SettingsModal />
         <UpdateNotification />
+        <SpecialCharactersModal editor={editorInstance} />
+        <DocumentStatisticsModal content={activeTab.content} />
       </div>
     </div>
   );

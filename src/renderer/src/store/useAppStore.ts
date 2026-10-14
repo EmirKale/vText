@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { DocumentTab, AppSettings, ProofreadItem, DocumentFormat } from '../../../shared/types';
 
+export interface SavedFormat {
+  marks: Array<{ type: string; attrs?: Record<string, any> }>;
+  textStyle?: Record<string, any>;
+  textAlign?: string;
+  lineHeight?: string;
+}
+
 interface AppState {
   tabs: DocumentTab[];
   activeTabId: string;
@@ -21,6 +28,11 @@ interface AppState {
   isImageOpen: boolean;
   isSettingsOpen: boolean;
   isToolbarMenuOpen: boolean;
+  isNavigatorOpen: boolean;
+  isSymbolsOpen: boolean;
+  isStatsOpen: boolean;
+  isFormatPainterActive: boolean;
+  savedFormat: SavedFormat | null;
   selectedTextForAi?: string;
 
   // Proofread Results
@@ -47,6 +59,12 @@ interface AppState {
   setImageOpen: (open: boolean, text?: string) => void;
   setSettingsOpen: (open: boolean) => void;
   setToolbarMenuOpen: (open: boolean) => void;
+  setNavigatorOpen: (open: boolean) => void;
+  toggleNavigator: () => void;
+  setSymbolsOpen: (open: boolean) => void;
+  setStatsOpen: (open: boolean) => void;
+  setSavedFormat: (format: SavedFormat | null, active?: boolean) => void;
+  clearFormatPainter: () => void;
   setProofreadItems: (items: ProofreadItem[]) => void;
   removeProofreadItem: (id: string) => void;
   setProofreadProgress: (p: { processed: number; total: number } | null) => void;
@@ -93,6 +111,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   isImageOpen: false,
   isSettingsOpen: false,
   isToolbarMenuOpen: false,
+  isNavigatorOpen: false,
+  isSymbolsOpen: false,
+  isStatsOpen: false,
+  isFormatPainterActive: false,
+  savedFormat: null,
   selectedTextForAi: undefined,
 
   proofreadItems: [],
@@ -182,6 +205,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setImageOpen: (open, text) => set({ isImageOpen: open, selectedTextForAi: text }),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   setToolbarMenuOpen: (open) => set({ isToolbarMenuOpen: open }),
+  setNavigatorOpen: (open) => set({ isNavigatorOpen: open }),
+  toggleNavigator: () => set(state => ({ isNavigatorOpen: !state.isNavigatorOpen })),
+  setSymbolsOpen: (open) => set({ isSymbolsOpen: open }),
+  setStatsOpen: (open) => set({ isStatsOpen: open }),
+  setSavedFormat: (format, active = true) => set({ savedFormat: format, isFormatPainterActive: active }),
+  clearFormatPainter: () => set({ savedFormat: null, isFormatPainterActive: false }),
 
   setProofreadItems: (items) => set({ proofreadItems: items }),
   removeProofreadItem: (id) => set(state => ({

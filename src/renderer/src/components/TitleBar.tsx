@@ -9,7 +9,8 @@ import {
   AlignJustify,
   Printer,
   SlidersHorizontal,
-  Check
+  Check,
+  ListTree
 } from 'lucide-react';
 import { VTextLogo } from './VTextLogo';
 import { TabBar } from './TabBar';
@@ -27,7 +28,9 @@ export const TitleBar: React.FC = () => {
     pageMargin,
     setPageMargin,
     pageOrientation,
-    setPageOrientation
+    setPageOrientation,
+    isNavigatorOpen,
+    toggleNavigator
   } = useAppStore();
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const dark = isDarkActive();
@@ -73,6 +76,16 @@ export const TitleBar: React.FC = () => {
 
       {/* Right controls — 140px reserved for the native window buttons */}
       <div className="h-full flex items-center gap-0.5 pr-[146px] no-drag shrink-0">
+        {/* Navigator button */}
+        <button
+          onClick={toggleNavigator}
+          data-active={isNavigatorOpen}
+          title={isNavigatorOpen ? 'Gezgini kapat (Ctrl+Shift+O)' : 'Belge Gezgini (Ctrl+Shift+O)'}
+          className="icon-btn"
+        >
+          <ListTree className="w-3.5 h-3.5" />
+        </button>
+
         {/* Print button */}
         <button
           onClick={() => window.print()}
