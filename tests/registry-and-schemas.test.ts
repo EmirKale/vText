@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { DocumentRegistry } from '../src/main/registry.ts';
 import {
   SaveFileSchema,
+  UnregisterFileSchema,
   ShowSaveDialogSchema,
   OpenDroppedFilePathSchema,
   RequestIdSchema,
@@ -174,6 +175,42 @@ describe('Zod Schemas - SaveFileSchema', () => {
     if (!res.success) {
       assert.match(res.error, /100MB/);
     }
+  });
+
+  it('aşırı büyük ArrayBufferView / Buffer içeriği (> 100MB) reddedilmelidir', () => {
+    const fakeView = {
+      buffer: new ArrayBuffer(0),
+      byteLength: MAX_CONTENT_BUFFER_BYTES + 500,
+      byteOffset: 0
+    };
+    Object.setPrototypeOf(fakeView, Uint8Array.prototype);
+
+    const res = validateIpc(SaveFileSchema, {
+      docId: crypto.randomUUID(),
+      content: fakeView
+    });
+    assert.equal(res.success, false);
+    if (!res.success) {
+      assert.match(res.error, /100MB/);
+    }
+  });
+});
+
+describe('Zod Schemas - UnregisterFileSchema', () => {
+  it('geçerli UUID ile docId unregister şemasından geçmelidir', () => {
+    const validUuid = crypto.randomUUID();
+    const res = validateIpc(UnregisterFileSchema, { docId: validUuid });
+    assert.equal(res.success, true);
+    if (res.success) {
+      assert.equal(res.data.docId, validUuid);
+    }
+  });
+
+  it('geçersiz, boş veya UUID olmayan docId unregister şemasında reddedilmelidir', () => {
+    assert.equal(validateIpc(UnregisterFileSchema, { docId: '' }).success, false);
+    assert.equal(validateIpc(UnregisterFileSchema, { docId: 'gecersiz-id' }).success, false);
+    assert.equal(validateIpc(UnregisterFileSchema, { docId: 12345 }).success, false);
+    assert.equal(validateIpc(UnregisterFileSchema, {}).success, false);
   });
 });
 

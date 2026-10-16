@@ -43,8 +43,10 @@ interface AppState {
   settings: AppSettings;
 
   // Actions
-  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat) => string;
+  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat, filePath?: string) => string;
   closeTab: (id: string) => void;
+  requestCloseTab: (id?: string) => Promise<boolean>;
+  setRequestCloseTab: (fn: (id?: string) => Promise<boolean>) => void;
   setActiveTab: (id: string) => void;
   updateTabContent: (id: string, content: string) => void;
   updateTabMeta: (id: string, meta: Partial<DocumentTab>) => void;
@@ -123,7 +125,43 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   settings: DEFAULT_SETTINGS,
 
-  addTab: (title, content, docId, format = 'docx') => {
+  addTab: (title, content, docId, format = 'docx', filePath) => {
+    const { tabs } = get();
+
+    // 1. Zaten açık olan belge kontrolü (docId veya filePath eşleşmesi)
+    const existing = tabs.find(
+      (t) => (docId && t.docId === docId) || (filePath && t.filePath === filePath)
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return existing.id;
+    }
+
+    // 2. İlk açılıştaki dokunulmamış boş/karşılama sekmesi varsa onun üzerine yaz
+    const currentActive = tabs.find((t) => t.id === get().activeTabId);
+    if (
+      tabs.length === 1 &&
+      currentActive &&
+      !currentActive.isDirty &&
+      !currentActive.docId &&
+      (!currentActive.content ||
+        currentActive.content === '<p></p>' ||
+        currentActive.content.includes('Hoş Geldiniz'))
+    ) {
+      const updatedTab: DocumentTab = {
+        ...currentActive,
+        title: title || currentActive.title,
+        content: content || '<p></p>',
+        docId,
+        filePath,
+        isDirty: false,
+        format: format || 'docx'
+      };
+      set({ tabs: [updatedTab], activeTabId: updatedTab.id });
+      return updatedTab.id;
+    }
+
+    // 3. Yeni sekme oluştur
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tabNumber = get().tabs.length + 1;
     const newTab: DocumentTab = {
@@ -131,11 +169,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       title: title || `Adsız Belge ${tabNumber}`,
       content: content || '<p></p>',
       docId,
+      filePath,
       isDirty: false,
       format
     };
 
-    set(state => ({
+    set((state) => ({
       tabs: [...state.tabs, newTab],
       activeTabId: id
     }));
@@ -150,7 +189,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (tabs.length === 1) {
-      // If closing the only tab, reset to an empty untitled tab
+      // Son sekme kapatıldığında uygulamanın kapanması yerine temiz bir boş belge açılır.
+      // Neden: vText sekmeli bir belge editörüdür; kullanıcının son belgeyi kapatması
+      // çalışma oturumunu sonlandırmak istediği anlamına gelmez. Beklenmedik kapanmayı
+      // önlemek ve çalışma akışını kesintisiz sürdürmek için boş bir belge sunulur.
       const newTab: DocumentTab = {
         id: `tab-${Date.now()}`,
         title: 'Adsız Belge 1',
@@ -162,8 +204,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const index = tabs.findIndex(t => t.id === id);
-    const newTabs = tabs.filter(t => t.id !== id);
+    const index = tabs.findIndex((t) => t.id === id);
+    const newTabs = tabs.filter((t) => t.id !== id);
     let nextActiveId = activeTabId;
 
     if (activeTabId === id) {
@@ -173,6 +215,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ tabs: newTabs, activeTabId: nextActiveId });
   },
+
+  requestCloseTab: async (id) => {
+    const state = get() as any;
+    if (state.closeTabHandler) {
+      return state.closeTabHandler(id || state.activeTabId);
+    }
+    get().closeTab(id || get().activeTabId);
+    return true;
+  },
+
+  setRequestCloseTab: (fn) => set({ closeTabHandler: fn } as any),
 
   setActiveTab: (id) => set({ activeTabId: id }),
 

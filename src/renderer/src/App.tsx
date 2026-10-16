@@ -22,6 +22,9 @@ export const App: React.FC = () => {
   const {
     tabs,
     activeTabId,
+    setActiveTab,
+    closeTab,
+    setRequestCloseTab,
     updateTabContent,
     updateTabMeta,
     addTab,
@@ -52,7 +55,7 @@ export const App: React.FC = () => {
       // Listen for files opened via Windows file association / double-click
       const unsubscribe = window.kalem.files.onOpenFile((result) => {
         if (result.success && result.content !== undefined) {
-          addTab(result.title, result.content, result.docId, result.format);
+          addTab(result.title, result.content, result.docId, result.format, result.filePath);
         }
       });
 
@@ -93,6 +96,13 @@ export const App: React.FC = () => {
           setFindMode('replace');
           return;
         }
+        // Ctrl+W: Sekmeyi kapat (kaydedilmemiş değişiklik kontrolüyle)
+        if (e.key === 'w' || e.key === 'W') {
+          e.preventDefault();
+          closeTabWithConfirmation(activeTab?.id);
+          return;
+        }
+
         // Ctrl+N: Yeni Belge
         if (e.key === 'n' || e.key === 'N') {
           e.preventDefault();
@@ -160,26 +170,31 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, editorInstance, isProofreadOpen]);
+  }, [activeTab, tabs, editorInstance, isProofreadOpen]);
 
   const handleOpenFile = async () => {
     if (!window.kalem) return;
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
-      addTab(res.title, res.content, res.docId, res.format);
+      addTab(res.title, res.content, res.docId, res.format, res.filePath);
     }
   };
 
-  const handleSaveFile = async (saveAs: boolean = false) => {
-    if (!activeTab || !editorInstance || !window.kalem) return;
+  const handleSaveFile = async (saveAs: boolean = false, targetTab?: any): Promise<boolean> => {
+    const currentTab = targetTab || activeTab;
+    if (!currentTab || !editorInstance || !window.kalem) return false;
 
-    const oldDocId = activeTab.docId;
-    let docId = activeTab.docId;
-    let format = activeTab.format || 'docx';
+    if (currentTab.id !== activeTab?.id) {
+      setActiveTab(currentTab.id);
+    }
+
+    const oldDocId = currentTab.docId;
+    let docId = currentTab.docId;
+    let format = currentTab.format || 'docx';
 
     if (!docId || saveAs) {
-      const chosen = await window.kalem.files.showSaveDialog(activeTab.title, format);
-      if (!chosen || chosen.canceled || !chosen.docId) return;
+      const chosen = await window.kalem.files.showSaveDialog(currentTab.title, format);
+      if (!chosen || chosen.canceled || !chosen.docId) return false;
       docId = chosen.docId;
       format = chosen.format ?? format;
 
@@ -188,21 +203,32 @@ export const App: React.FC = () => {
         window.kalem.files.unregister(oldDocId).catch(() => {});
       }
 
-      updateTabMeta(activeTab.id, {
+      // Eğer seçilen dosya başka bir sekmede zaten açıksa, mükerrer sekmeyi güvenle kapat
+      const duplicateOpenTab = tabs.find(
+        (t) =>
+          t.id !== currentTab.id &&
+          (t.docId === chosen.docId || (chosen.filePath && t.filePath === chosen.filePath))
+      );
+      if (duplicateOpenTab) {
+        closeTab(duplicateOpenTab.id);
+      }
+
+      updateTabMeta(currentTab.id, {
         docId: chosen.docId,
-        title: chosen.title || activeTab.title,
+        filePath: chosen.filePath,
+        title: chosen.title || currentTab.title,
         format: format
       });
     }
 
-    if (!docId) return;
+    if (!docId) return false;
 
     try {
       let saveRes;
 
       if (format === 'docx') {
         const json = editorInstance.getJSON();
-        const docxBuffer = await exportTipTapJsonToDocx(json, activeTab.title, {
+        const docxBuffer = await exportTipTapJsonToDocx(json, currentTab.title, {
           margin: pageMargin,
           orientation: pageOrientation
         });
@@ -220,18 +246,83 @@ export const App: React.FC = () => {
       }
 
       if (saveRes && saveRes.success) {
-        updateTabMeta(activeTab.id, {
-          title: saveRes.title || activeTab.title,
+        updateTabMeta(currentTab.id, {
+          title: saveRes.title || currentTab.title,
           isDirty: false,
           lastSavedAt: Date.now()
         });
+        return true;
       } else if (saveRes && saveRes.error) {
         alert(`Kaydetme hatası: ${saveRes.error}`);
+        return false;
       }
+      return false;
     } catch (err: any) {
       alert(`Kaydetme hatası: ${err.message}`);
+      return false;
     }
   };
+
+  // Tek noktada tanımlı kapatma onay mantığı:
+  // Ctrl+W, sekme çarpısı, pencere çarpısı, Alt+F4 ve app.quit bu akıştan geçer
+  const closeTabWithConfirmation = async (tabId?: string): Promise<boolean> => {
+    const targetId = tabId || activeTabId;
+    const tab = tabs.find((t) => t.id === targetId);
+    if (!tab) return true;
+
+    if (tab.isDirty) {
+      setActiveTab(tab.id);
+
+      const decision = window.kalem?.dialog?.confirmClose
+        ? await window.kalem.dialog.confirmClose(tab.title)
+        : confirm(`"${tab.title}" belgesinde kaydedilmemiş değişiklikler var. Kaydetmek istiyor musunuz?`)
+        ? 'save'
+        : 'dont-save';
+
+      if (decision === 'cancel') {
+        return false; // Kapatmayı durdur
+      }
+
+      if (decision === 'save') {
+        const saved = await handleSaveFile(false, tab);
+        if (!saved) {
+          return false; // Kaydetme başarısız veya diyalog iptal edildi, kapatma durdurulur
+        }
+      }
+    }
+
+    closeTab(tab.id);
+    return true;
+  };
+
+  // Pencere / Uygulama kapatma isteği (Pencere X, Alt+F4, app.quit)
+  const closeWindowWithConfirmation = async (): Promise<boolean> => {
+    const dirtyTabs = tabs.filter((t) => t.isDirty);
+    for (const dirtyTab of dirtyTabs) {
+      const closed = await closeTabWithConfirmation(dirtyTab.id);
+      if (!closed) {
+        return false; // Kullanıcı iptal etti, pencere açık kalır
+      }
+    }
+    // Tüm sekmeler ya kaydedildi ya da kaydedilmeden kapatıldı
+    await window.kalem?.window?.close(true);
+    return true;
+  };
+
+  // Kapatma fonksiyonunu useAppStore'a tek merkez olarak bağla
+  useEffect(() => {
+    setRequestCloseTab(closeTabWithConfirmation);
+  }, [tabs, activeTabId, editorInstance]);
+
+  // Ana süreçten gelen pencere kapatma sinyalini dinle
+  useEffect(() => {
+    if (window.kalem?.window?.onRequestClose) {
+      const cleanup = window.kalem.window.onRequestClose(() => {
+        closeWindowWithConfirmation();
+      });
+      return cleanup;
+    }
+  }, [tabs, editorInstance]);
 
   const handleExportPdf = async () => {
     if (!activeTab || !editorInstance || !window.kalem) return;
@@ -260,7 +351,7 @@ export const App: React.FC = () => {
       if (file && window.kalem) {
         const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
-          addTab(res.title, res.content, res.docId, res.format);
+          addTab(res.title, res.content, res.docId, res.format, res.filePath);
         } else if (res.error) {
           alert(`Dosya açılamadı: ${res.error}`);
         }

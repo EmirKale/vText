@@ -78,10 +78,14 @@ function createWindow(): void {
     show: false
   });
 
-  // Save window bounds on close
-  mainWindow.on('close', () => {
-    if (mainWindow) {
-      store.set('windowBounds', mainWindow.getBounds());
+  // Save window bounds and intercept close to ask for confirmation if there are unsaved tabs
+  mainWindow.on('close', (e) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        store.set('windowBounds', mainWindow.getBounds());
+      } catch {}
+      e.preventDefault();
+      mainWindow.webContents.send('app:request-close-window');
     }
   });
 

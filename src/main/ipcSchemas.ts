@@ -46,25 +46,36 @@ export const ShowSaveDialogSchema = z.object({
 
 const isBinaryBuffer = (val: unknown): val is Uint8Array | Buffer => {
   if (!val || typeof val !== 'object') return false;
-  return (
+  const isViewOrBuf =
     val instanceof Uint8Array ||
     Buffer.isBuffer(val) ||
     ArrayBuffer.isView(val) ||
     (val as any).constructor?.name === 'Uint8Array' ||
-    (val as any).constructor?.name === 'Buffer'
-  );
+    (val as any).constructor?.name === 'Buffer';
+  return isViewOrBuf && typeof (val as any).byteLength === 'number';
 };
 
 export const SaveFileSchema = z.object({
   docId: z.string().uuid('Geçersiz belge kimliği formatı (UUID bekleniyor).'),
   content: z.union([
     z.string().max(MAX_CONTENT_STRING_LENGTH, 'Metin içeriği 50MB sınırını aşıyor.'),
-    z.custom<Uint8Array | Buffer>(isBinaryBuffer, {
-      message: 'İkili dosya içeriği (Buffer veya Uint8Array) bekleniyor.'
-    }).refine((buf) => (buf as Uint8Array | Buffer).byteLength <= MAX_CONTENT_BUFFER_BYTES, {
-      message: 'İkili dosya içeriği 100MB sınırını aşıyor.'
-    })
+    z
+      .custom<Uint8Array | Buffer>(isBinaryBuffer, {
+        message: 'İkili dosya içeriği (Buffer veya Uint8Array) bekleniyor.'
+      })
+      .refine(
+        (buf) =>
+          typeof (buf as any).byteLength === 'number' &&
+          (buf as any).byteLength <= MAX_CONTENT_BUFFER_BYTES,
+        {
+          message: 'İkili dosya içeriği 100MB sınırını aşıyor.'
+        }
+      )
   ])
+});
+
+export const UnregisterFileSchema = z.object({
+  docId: z.string().uuid('Geçersiz belge kimliği formatı (UUID bekleniyor).')
 });
 
 export const ExportPdfSchema = z.object({

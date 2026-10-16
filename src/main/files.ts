@@ -119,6 +119,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       return {
         success: true,
         docId: entry.docId,
+        filePath: entry.filePath,
         title: entry.title,
         content,
         format: ext
@@ -133,6 +134,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       return {
         success: true,
         docId: entry.docId,
+        filePath: entry.filePath,
         title: entry.title,
         content: mammothResult.value,
         format: 'docx',
@@ -150,6 +152,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
         return {
           success: true,
           docId: entry.docId,
+          filePath: entry.filePath,
           title: entry.title,
           content: mammothResult.value,
           format: ext
@@ -168,6 +171,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     return {
       success: true,
       docId: entry.docId,
+      filePath: entry.filePath,
       title: entry.title,
       content: rawContent,
       format: ext
@@ -227,6 +231,7 @@ export async function showSaveFilePicker(
     success: true,
     canceled: false,
     docId: entry.docId,
+    filePath: entry.filePath,
     title: entry.title,
     format: entry.format
   };

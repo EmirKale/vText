@@ -14,7 +14,17 @@ import {
 
 export const kalemApi = {
   window: {
-    setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark)
+    setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark),
+    close: (force?: boolean): Promise<boolean> => ipcRenderer.invoke('window:close', force),
+    onRequestClose: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('app:request-close-window', listener);
+      return () => ipcRenderer.removeListener('app:request-close-window', listener);
+    }
+  },
+  dialog: {
+    confirmClose: (documentTitle: string): Promise<'save' | 'dont-save' | 'cancel'> =>
+      ipcRenderer.invoke('dialog:confirmClose', documentTitle)
   },
   files: {
     open: (): Promise<FileOpenResult> => ipcRenderer.invoke('files:open'),

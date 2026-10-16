@@ -55,10 +55,20 @@ import {
   TranslateSchema,
   ImagePromptSchema,
   ImageGenSchema,
-  ExportPdfSchema
+  ExportPdfSchema,
+  UnregisterFileSchema
 } from './ipcSchemas';
 
 const store = new Store();
+
+function isValidSender(event: Electron.IpcMainInvokeEvent): boolean {
+  const senderUrl = event.senderFrame?.url;
+  if (!senderUrl) return false;
+  if (process.env.ELECTRON_RENDERER_URL) {
+    return senderUrl.startsWith(process.env.ELECTRON_RENDERER_URL);
+  }
+  return senderUrl.startsWith('file://');
+}
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // 0. Window chrome — keep native caption buttons in sync with the renderer theme
@@ -112,11 +122,42 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return saveFile(validated.data.docId, data);
   });
 
-  ipcMain.handle('files:unregister', async (_, docId: unknown) => {
-    if (typeof docId === 'string' && docId) {
-      return documentRegistry.unregister(docId);
+  ipcMain.handle('files:unregister', async (event, docId: unknown) => {
+    if (!isValidSender(event)) return false;
+    const validated = validateIpc(UnregisterFileSchema, { docId });
+    if (!validated.success) return false;
+    return documentRegistry.unregister(validated.data.docId);
+  });
+
+  ipcMain.handle('dialog:confirmClose', async (event, documentTitle: unknown) => {
+    if (!isValidSender(event)) return 'cancel';
+    const title = typeof documentTitle === 'string' && documentTitle.trim() ? documentTitle.trim() : 'Belge';
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Kaydet', 'Kaydetme', 'İptal'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: 'Kaydedilmemiş Değişiklikler',
+      message: `"${title}" belgesinde yaptığınız değişiklikleri kaydetmek istiyor musunuz?`,
+      detail: 'Kaydetmezseniz yaptığınız tüm değişiklikler kaybolacaktır.'
+    });
+    return result.response === 0 ? 'save' : result.response === 1 ? 'dont-save' : 'cancel';
+  });
+
+  ipcMain.handle('window:close', async (event, force: unknown) => {
+    if (!isValidSender(event)) return false;
+    if (force === true) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          store.set('windowBounds', mainWindow.getBounds());
+        } catch {}
+        mainWindow.destroy();
+      }
+      return true;
     }
-    return false;
+    mainWindow.close();
+    return true;
   });
 
   ipcMain.handle('files:exportPdf', async (_, htmlContent: unknown, defaultTitle: unknown) => {

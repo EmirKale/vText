@@ -4,7 +4,7 @@ import { Plus, X } from 'lucide-react';
 
 /** Tabs rendered inside the title bar. The active tab merges into the desk below it. */
 export const TabBar: React.FC = () => {
-  const { tabs, activeTabId, setActiveTab, closeTab, addTab } = useAppStore();
+  const { tabs, activeTabId, setActiveTab, requestCloseTab, addTab } = useAppStore();
 
   return (
     <div className="flex items-end h-full min-w-0 gap-px overflow-x-auto no-drag [&::-webkit-scrollbar]:hidden">
@@ -18,7 +18,7 @@ export const TabBar: React.FC = () => {
             onMouseDown={(e) => {
               if (e.button === 1) {
                 e.preventDefault();
-                closeTab(tab.id);
+                requestCloseTab(tab.id);
               }
             }}
             onClick={() => setActiveTab(tab.id)}
@@ -34,7 +34,7 @@ export const TabBar: React.FC = () => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(tab.id);
+                requestCloseTab(tab.id);
               }}
               aria-label={`${tab.title} sekmesini kapat`}
               className="relative grid place-items-center w-5 h-5 rounded shrink-0 hover:bg-ink/10"
