@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
 import { registerIpcHandlers } from './ipc';
@@ -9,6 +9,21 @@ import { getApiKey } from './keystore';
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
 let fileToOpenOnReady: string | null = null;
+let isAppQuitting = false;
+let isClosePending = false;
+let closeTimeout: NodeJS.Timeout | null = null;
+
+export function setAppQuitting(val: boolean = true): void {
+  isAppQuitting = val;
+}
+
+export function clearCloseTimeout(): void {
+  if (closeTimeout) {
+    clearTimeout(closeTimeout);
+    closeTimeout = null;
+  }
+  isClosePending = false;
+}
 
 // Parse file argument from command line (Windows Open With / Double-click)
 function parseArgvForFile(argv: string[]): string | null {
@@ -80,12 +95,74 @@ function createWindow(): void {
 
   // Save window bounds and intercept close to ask for confirmation if there are unsaved tabs
   mainWindow.on('close', (e) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try {
-        store.set('windowBounds', mainWindow.getBounds());
-      } catch {}
+    // 1. Windows oturum kapatma / yeniden başlatma (session-end / before-quit) ve autoUpdater durumlarında onayı atla
+    if (isAppQuitting) {
+      return;
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    // 2. Aynı anda birden fazla kapatma isteğinde çift onay penceresi çıkmasın
+    if (isClosePending) {
       e.preventDefault();
-      mainWindow.webContents.send('app:request-close-window');
+      return;
+    }
+
+    try {
+      store.set('windowBounds', mainWindow.getBounds());
+    } catch {}
+
+    e.preventDefault();
+    isClosePending = true;
+
+    // 3. Renderer yanıt vermezse (3.5 saniye zaman aşımı) kullanıcıya kapatma seçeneği ver
+    if (closeTimeout) clearTimeout(closeTimeout);
+    closeTimeout = setTimeout(() => {
+      if (isClosePending && mainWindow && !mainWindow.isDestroyed()) {
+        isClosePending = false;
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['Kapat', 'Bekle'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          title: 'vText Yanıt Vermiyor',
+          message: 'Uygulama kapatılırken yanıt vermiyor. Yine de kapatmak istiyor musunuz?'
+        });
+        if (choice === 0) {
+          mainWindow.destroy();
+        }
+      }
+    }, 3500);
+
+    mainWindow.webContents.send('app:request-close-window');
+  });
+
+  // Renderer çöktüğünde veya yanıt vermediğinde pencere kilitli kalmasın
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.warn(`[Main] Renderer process gone (${details.reason})`);
+    clearCloseTimeout();
+    mainWindow?.destroy();
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.warn('[Main] Renderer unresponsive');
+    if (isClosePending && mainWindow && !mainWindow.isDestroyed()) {
+      clearCloseTimeout();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'warning',
+        buttons: ['Kapat', 'Bekle'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        title: 'vText Yanıt Vermiyor',
+        message: 'Uygulama yanıt vermiyor. Yine de kapatmak istiyor musunuz?'
+      });
+      if (choice === 0) {
+        mainWindow.destroy();
+      }
     }
   });
 
@@ -143,6 +220,11 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  isAppQuitting = true;
+  clearCloseTimeout();
 });
 
 app.on('window-all-closed', () => {

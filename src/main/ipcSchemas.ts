@@ -181,6 +181,11 @@ export const ImageGenSchema = z.object({
   selectedText: z.string().max(5000).optional()
 });
 
+export const ConfirmOverwriteSchema = z.object({
+  targetTitle: z.string().trim().min(1).max(255).default('Belge'),
+  isDirty: z.boolean().default(false)
+});
+
 // Helper validation runner
 export function validateIpc<T>(
   schema: z.ZodSchema<T>,

@@ -4,12 +4,12 @@ export interface DocumentTab {
   id: string;
   title: string;
   docId?: string;
-  filePath?: string;
   content: string; // TipTap HTML or JSON string
   isDirty: boolean;
   format: DocumentFormat;
   lastSavedAt?: number;
 }
+
 
 export type WordCountOption = '200-400' | '400-600' | '600-800' | '800+' | 'custom';
 
@@ -103,7 +103,6 @@ export interface FileSaveResult {
 export interface FileOpenResult {
   success: boolean;
   docId?: string;
-  filePath?: string;
   title?: string;
   content?: string;
   format?: DocumentFormat;
@@ -115,7 +114,6 @@ export interface ShowSaveDialogResult {
   success: boolean;
   canceled: boolean;
   docId?: string;
-  filePath?: string;
   title?: string;
   format?: DocumentFormat;
   error?: string;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
@@ -55,7 +55,7 @@ export const App: React.FC = () => {
       // Listen for files opened via Windows file association / double-click
       const unsubscribe = window.kalem.files.onOpenFile((result) => {
         if (result.success && result.content !== undefined) {
-          addTab(result.title, result.content, result.docId, result.format, result.filePath);
+          addTab(result.title, result.content, result.docId, result.format);
         }
       });
 
@@ -176,7 +176,7 @@ export const App: React.FC = () => {
     if (!window.kalem) return;
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
-      addTab(res.title, res.content, res.docId, res.format, res.filePath);
+      addTab(res.title, res.content, res.docId, res.format);
     }
   };
 
@@ -191,32 +191,47 @@ export const App: React.FC = () => {
     const oldDocId = currentTab.docId;
     let docId = currentTab.docId;
     let format = currentTab.format || 'docx';
+    let docTitle = currentTab.title;
 
     if (!docId || saveAs) {
       const chosen = await window.kalem.files.showSaveDialog(currentTab.title, format);
       if (!chosen || chosen.canceled || !chosen.docId) return false;
       docId = chosen.docId;
       format = chosen.format ?? format;
+      docTitle = chosen.title || currentTab.title;
 
       // Farklı kaydet yapılıyorsa ve önceki docId varsa eskisini registry'den sil
       if (saveAs && oldDocId && oldDocId !== docId) {
         window.kalem.files.unregister(oldDocId).catch(() => {});
       }
 
-      // Eğer seçilen dosya başka bir sekmede zaten açıksa, mükerrer sekmeyi güvenle kapat
+      // Eğer seçilen dosya başka bir sekmede zaten açıksa, kullanıcıya sor
       const duplicateOpenTab = tabs.find(
-        (t) =>
-          t.id !== currentTab.id &&
-          (t.docId === chosen.docId || (chosen.filePath && t.filePath === chosen.filePath))
+        (t) => t.id !== currentTab.id && t.docId === chosen.docId
       );
       if (duplicateOpenTab) {
+        const overwriteDecision = window.kalem?.dialog?.confirmOverwrite
+          ? await window.kalem.dialog.confirmOverwrite({
+              targetTitle: duplicateOpenTab.title,
+              isDirty: duplicateOpenTab.isDirty
+            })
+          : (window.confirm(
+              duplicateOpenTab.isDirty
+                ? `Bu dosya ("${duplicateOpenTab.title}") başka bir sekmede açık ve kaydedilmemiş değişiklikleri var. Üzerine yazılırsa o sekme kapatılacak ve değişiklikler kaybolacaktır.`
+                : `Bu dosya ("${duplicateOpenTab.title}") başka bir sekmede açık. Üzerine yazılırsa o sekme kapatılacak.`
+            ) ? 'overwrite' : 'cancel');
+
+        if (overwriteDecision !== 'overwrite') {
+          return false; // İptal edildi: kaydetme durdurulur ve diğer sekme kapatılmaz!
+        }
+
+        // Kullanıcı onayladıysa eski sekme kapatılır
         closeTab(duplicateOpenTab.id);
       }
 
       updateTabMeta(currentTab.id, {
         docId: chosen.docId,
-        filePath: chosen.filePath,
-        title: chosen.title || currentTab.title,
+        title: docTitle,
         format: format
       });
     }
@@ -228,7 +243,7 @@ export const App: React.FC = () => {
 
       if (format === 'docx') {
         const json = editorInstance.getJSON();
-        const docxBuffer = await exportTipTapJsonToDocx(json, currentTab.title, {
+        const docxBuffer = await exportTipTapJsonToDocx(json, docTitle, {
           margin: pageMargin,
           orientation: pageOrientation
         });
@@ -247,7 +262,7 @@ export const App: React.FC = () => {
 
       if (saveRes && saveRes.success) {
         updateTabMeta(currentTab.id, {
-          title: saveRes.title || currentTab.title,
+          title: saveRes.title || docTitle,
           isDirty: false,
           lastSavedAt: Date.now()
         });
@@ -295,18 +310,36 @@ export const App: React.FC = () => {
     return true;
   };
 
+  const isClosingWindowRef = useRef(false);
+
   // Pencere / Uygulama kapatma isteği (Pencere X, Alt+F4, app.quit)
   const closeWindowWithConfirmation = async (): Promise<boolean> => {
-    const dirtyTabs = tabs.filter((t) => t.isDirty);
-    for (const dirtyTab of dirtyTabs) {
-      const closed = await closeTabWithConfirmation(dirtyTab.id);
-      if (!closed) {
-        return false; // Kullanıcı iptal etti, pencere açık kalır
+    if (isClosingWindowRef.current) return false;
+    isClosingWindowRef.current = true;
+
+    try {
+      const dirtyTabs = tabs.filter((t) => t.isDirty);
+      // Kaydedilmemiş sekme yokken pencere çarpısı doğrudan onaysız kapanır
+      if (dirtyTabs.length === 0) {
+        await window.kalem?.window?.close(true);
+        return true;
       }
+
+      for (const dirtyTab of dirtyTabs) {
+        const closed = await closeTabWithConfirmation(dirtyTab.id);
+        if (!closed) {
+          // Kullanıcı iptal etti, ana sürece bildir ve pencereyi açık bırak
+          await window.kalem?.window?.cancelClose?.();
+          return false;
+        }
+      }
+
+      // Tüm sekmeler ya kaydedildi ya da kaydedilmeden kapatıldı
+      await window.kalem?.window?.close(true);
+      return true;
+    } finally {
+      isClosingWindowRef.current = false;
     }
-    // Tüm sekmeler ya kaydedildi ya da kaydedilmeden kapatıldı
-    await window.kalem?.window?.close(true);
-    return true;
   };
 
   // Kapatma fonksiyonunu useAppStore'a tek merkez olarak bağla
@@ -351,7 +384,7 @@ export const App: React.FC = () => {
       if (file && window.kalem) {
         const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
-          addTab(res.title, res.content, res.docId, res.format, res.filePath);
+          addTab(res.title, res.content, res.docId, res.format);
         } else if (res.error) {
           alert(`Dosya açılamadı: ${res.error}`);
         }

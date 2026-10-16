@@ -16,6 +16,7 @@ export const kalemApi = {
   window: {
     setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark),
     close: (force?: boolean): Promise<boolean> => ipcRenderer.invoke('window:close', force),
+    cancelClose: (): Promise<boolean> => ipcRenderer.invoke('window:cancelClose'),
     onRequestClose: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('app:request-close-window', listener);
@@ -24,7 +25,9 @@ export const kalemApi = {
   },
   dialog: {
     confirmClose: (documentTitle: string): Promise<'save' | 'dont-save' | 'cancel'> =>
-      ipcRenderer.invoke('dialog:confirmClose', documentTitle)
+      ipcRenderer.invoke('dialog:confirmClose', documentTitle),
+    confirmOverwrite: (options: { targetTitle: string; isDirty: boolean }): Promise<'overwrite' | 'cancel'> =>
+      ipcRenderer.invoke('dialog:confirmOverwrite', options)
   },
   files: {
     open: (): Promise<FileOpenResult> => ipcRenderer.invoke('files:open'),
@@ -52,7 +55,7 @@ export const kalemApi = {
     exportPdf: (
       htmlContent: string,
       defaultTitle?: string
-    ): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+    ): Promise<{ success: boolean; canceled?: boolean; error?: string }> =>
       ipcRenderer.invoke('files:exportPdf', htmlContent, defaultTitle),
     saveAsset: (dataUrl: string) => ipcRenderer.invoke('files:saveAsset', dataUrl),
     onOpenFile: (callback: (result: FileOpenResult) => void) => {
@@ -147,7 +150,7 @@ export const kalemApi = {
     },
     generateImagePrompt: (text: string): Promise<string> =>
       ipcRenderer.invoke('ai:generateImagePrompt', text),
-    generateImage: (options: ImageGenOptions): Promise<{ assetUrl: string; filePath: string; totalTokens?: number }> =>
+    generateImage: (options: ImageGenOptions): Promise<{ assetUrl: string; totalTokens?: number }> =>
       ipcRenderer.invoke('ai:generateImage', options)
   },
   settings: {

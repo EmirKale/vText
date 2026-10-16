@@ -1,5 +1,8 @@
-import { ipcMain, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
+import { app, ipcMain, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
+import path from 'path';
+import { pathToFileURL } from 'url';
 import Store from 'electron-store';
+import { clearCloseTimeout } from './index';
 import {
   showOpenFilePicker,
   openFileByPath,
@@ -56,23 +59,16 @@ import {
   ImagePromptSchema,
   ImageGenSchema,
   ExportPdfSchema,
-  UnregisterFileSchema
+  UnregisterFileSchema,
+  ConfirmOverwriteSchema
 } from './ipcSchemas';
+import { isValidSender, registerSecureHandler } from './ipcSecurity';
 
 const store = new Store();
 
-function isValidSender(event: Electron.IpcMainInvokeEvent): boolean {
-  const senderUrl = event.senderFrame?.url;
-  if (!senderUrl) return false;
-  if (process.env.ELECTRON_RENDERER_URL) {
-    return senderUrl.startsWith(process.env.ELECTRON_RENDERER_URL);
-  }
-  return senderUrl.startsWith('file://');
-}
-
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // 0. Window chrome — keep native caption buttons in sync with the renderer theme
-  ipcMain.handle('window:setTheme', async (_, isDark: boolean) => {
+  registerSecureHandler('window:setTheme', async (_, isDark: boolean) => {
     try {
       mainWindow.setTitleBarOverlay({
         color: isDark ? '#13191C' : '#F0F3F0',
@@ -85,11 +81,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 1. Filesystem Handlers (Hardened: No raw file paths accepted from renderer)
-  ipcMain.handle('files:open', async () => {
+  registerSecureHandler('files:open', async () => {
     return showOpenFilePicker(mainWindow);
   });
 
-  ipcMain.handle('files:openDropped', async (_, filePath: unknown) => {
+  registerSecureHandler('files:openDropped', async (_, filePath: unknown) => {
     const validated = validateIpc(OpenDroppedFilePathSchema, { filePath });
     if (!validated.success) {
       return { success: false, error: validated.error };
@@ -97,7 +93,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return openDroppedFile(validated.data.filePath);
   });
 
-  ipcMain.handle('files:showSaveDialog', async (_, defaultTitle: unknown, format: unknown) => {
+  registerSecureHandler('files:showSaveDialog', async (_, defaultTitle: unknown, format: unknown) => {
     const validated = validateIpc(ShowSaveDialogSchema, { defaultTitle, format });
     if (!validated.success) {
       return { success: false, canceled: true, error: validated.error };
@@ -105,7 +101,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return showSaveFilePicker(mainWindow, validated.data.defaultTitle, validated.data.format);
   });
 
-  ipcMain.handle('files:save', async (_, docId: unknown, content: unknown) => {
+  registerSecureHandler('files:save', async (_, docId: unknown, content: unknown) => {
     const validated = validateIpc(SaveFileSchema, { docId, content });
     if (!validated.success) {
       return { success: false, error: validated.error };
@@ -122,15 +118,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return saveFile(validated.data.docId, data);
   });
 
-  ipcMain.handle('files:unregister', async (event, docId: unknown) => {
-    if (!isValidSender(event)) return false;
+  registerSecureHandler('files:unregister', async (_, docId: unknown) => {
     const validated = validateIpc(UnregisterFileSchema, { docId });
     if (!validated.success) return false;
     return documentRegistry.unregister(validated.data.docId);
   });
 
-  ipcMain.handle('dialog:confirmClose', async (event, documentTitle: unknown) => {
-    if (!isValidSender(event)) return 'cancel';
+  registerSecureHandler('dialog:confirmClose', async (_, documentTitle: unknown) => {
     const title = typeof documentTitle === 'string' && documentTitle.trim() ? documentTitle.trim() : 'Belge';
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'question',
@@ -145,8 +139,35 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return result.response === 0 ? 'save' : result.response === 1 ? 'dont-save' : 'cancel';
   });
 
-  ipcMain.handle('window:close', async (event, force: unknown) => {
-    if (!isValidSender(event)) return false;
+  registerSecureHandler('dialog:confirmOverwrite', async (_, payload: unknown) => {
+    const validated = validateIpc(ConfirmOverwriteSchema, payload);
+    const title = validated.success ? validated.data.targetTitle : 'Belge';
+    const isDirty = validated.success ? validated.data.isDirty : false;
+
+    const message = isDirty
+      ? `Bu dosya ("${title}") başka bir sekmede açık ve kaydedilmemiş değişiklikleri var.`
+      : `Bu dosya ("${title}") başka bir sekmede açık.`;
+
+    const detail = isDirty
+      ? 'Üzerine yazılırsa o sekme kapatılacak ve kaydedilmemiş değişiklikleri kaybolacaktır.'
+      : 'Üzerine yazılırsa o sekme kapatılacak.';
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['İptal', 'Üzerine Yaz'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Dosya Başka Bir Sekmede Açık',
+      message: `${message} ${detail}`,
+      detail: 'Üzerine yazmak istiyor musunuz?'
+    });
+
+    return result.response === 1 ? 'overwrite' : 'cancel';
+  });
+
+  registerSecureHandler('window:close', async (_, force: unknown) => {
+    clearCloseTimeout();
     if (force === true) {
       if (mainWindow && !mainWindow.isDestroyed()) {
         try {
@@ -160,7 +181,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return true;
   });
 
-  ipcMain.handle('files:exportPdf', async (_, htmlContent: unknown, defaultTitle: unknown) => {
+  registerSecureHandler('window:cancelClose', async () => {
+    clearCloseTimeout();
+    return true;
+  });
+
+  registerSecureHandler('files:exportPdf', async (_, htmlContent: unknown, defaultTitle: unknown) => {
     const validated = validateIpc(ExportPdfSchema, { htmlContent, defaultTitle });
     if (!validated.success) {
       return { success: false, error: validated.error };
@@ -184,10 +210,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!success) {
       return { success: false, error: 'PDF dosyası oluşturulamadı.' };
     }
-    return { success: true, canceled: false, filePath: saveRes.filePath };
+    return { success: true, canceled: false };
   });
 
-  ipcMain.handle('files:saveAsset', async (_, dataUrl: unknown) => {
+  registerSecureHandler('files:saveAsset', async (_, dataUrl: unknown) => {
     const validated = validateIpc(SaveAssetSchema, { dataUrl });
     if (!validated.success) {
       throw new Error(validated.error);
@@ -196,7 +222,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 2. Settings Handlers
-  ipcMain.handle('settings:get', async (): Promise<AppSettings> => {
+  registerSecureHandler('settings:get', async (): Promise<AppSettings> => {
     const tools = await detectTools();
     const hasKey = !!getApiKey();
     const masked = getMaskedApiKey();
@@ -218,7 +244,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     };
   });
 
-  ipcMain.handle('settings:save', async (_, newSettings: Partial<AppSettings>) => {
+  registerSecureHandler('settings:save', async (_, newSettings: Partial<AppSettings>) => {
     if (newSettings.textModel) store.set('textModel', newSettings.textModel);
     if (newSettings.imageModel) store.set('imageModel', newSettings.imageModel);
     if (newSettings.defaultLanguage) store.set('defaultLanguage', newSettings.defaultLanguage);
@@ -236,7 +262,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return true;
   });
 
-  ipcMain.handle('settings:saveApiKey', async (_, key: string) => {
+  registerSecureHandler('settings:saveApiKey', async (_, key: string) => {
     if (!key || key.trim().length === 0) {
       removeApiKey();
       return { success: true };
@@ -245,29 +271,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return { success };
   });
 
-  ipcMain.handle('settings:testApiKey', async () => {
+  registerSecureHandler('settings:testApiKey', async () => {
     return testApiKey();
   });
 
-  ipcMain.handle('settings:importedFromPlaintext', () => {
+  registerSecureHandler('settings:importedFromPlaintext', () => {
     return hasImportedFromPlaintext();
   });
 
-  ipcMain.handle('tools:detect', async () => {
+  registerSecureHandler('tools:detect', async () => {
     return detectTools();
   });
 
   // 3. AI Handlers
-  ipcMain.handle('ai:getModels', async () => {
+  registerSecureHandler('ai:getModels', async () => {
     return fetchAvailableModels();
   });
 
-  ipcMain.handle('ai:abort', (_, requestId: string) => {
+  registerSecureHandler('ai:abort', (_, requestId: string) => {
     return abortAiRequest(requestId);
   });
 
   // Stream Article
-  ipcMain.handle('ai:generateArticle', async (event, requestId: string, options: GenerateArticleOptions) => {
+  registerSecureHandler('ai:generateArticle', async (event, requestId: string, options: GenerateArticleOptions) => {
     const validated = validateIpc(GenerateArticleSchema, options);
     if (!validated.success) {
       event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
@@ -293,7 +319,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Stream Rewrite
-  ipcMain.handle('ai:rewrite', async (event, requestId: string, options: RewriteOptions) => {
+  registerSecureHandler('ai:rewrite', async (event, requestId: string, options: RewriteOptions) => {
     const validated = validateIpc(RewriteSchema, options);
     if (!validated.success) {
       event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
@@ -319,7 +345,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Proofread Page (Process blocks and return structured JSON)
-  ipcMain.handle('ai:proofread', async (event, requestId: string, blocks: Array<{ id: string; text: string; index: number }>) => {
+  registerSecureHandler('ai:proofread', async (event, requestId: string, blocks: Array<{ id: string; text: string; index: number }>) => {
     const validated = validateIpc(ProofreadBlocksSchema, blocks);
     if (!validated.success) {
       throw new Error(validated.error);
@@ -385,7 +411,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Translation (Stream translated section)
-  ipcMain.handle('ai:translate', async (event, requestId: string, text: string, targetLanguage: string) => {
+  registerSecureHandler('ai:translate', async (event, requestId: string, text: string, targetLanguage: string) => {
     const validated = validateIpc(TranslateSchema, { text, targetLanguage });
     if (!validated.success) {
       event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
@@ -411,7 +437,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Generate Image Prompt from Text
-  ipcMain.handle('ai:generateImagePrompt', async (_, text: string) => {
+  registerSecureHandler('ai:generateImagePrompt', async (_, text: string) => {
     const validated = validateIpc(ImagePromptSchema, { text });
     if (!validated.success) {
       throw new Error(validated.error);
@@ -428,7 +454,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Generate Image with Seedream or selected model
-  ipcMain.handle('ai:generateImage', async (_, options: ImageGenOptions) => {
+  registerSecureHandler('ai:generateImage', async (_, options: ImageGenOptions) => {
     const validated = validateIpc(ImageGenSchema, options);
     if (!validated.success) {
       throw new Error(validated.error);
@@ -454,7 +480,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     return {
       assetUrl: asset.assetUrl,
-      filePath: asset.filePath,
       totalTokens
     };
   });

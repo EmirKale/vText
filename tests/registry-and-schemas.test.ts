@@ -14,6 +14,7 @@ import {
   ProofreadBlocksSchema,
   TranslateSchema,
   ImageGenSchema,
+  ConfirmOverwriteSchema,
   validateIpc,
   MAX_CONTENT_STRING_LENGTH,
   MAX_CONTENT_BUFFER_BYTES
@@ -477,6 +478,22 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
       assert.equal(tempFiles.length, 0, 'Başarısız yazmada geçici .tmp dosyası silinmiş olmalıdır');
     } finally {
       vi.restoreAllMocks();
+    }
+  });
+
+  it('ConfirmOverwriteSchema: geçerli parametreleri doğrulamalı ve varsayılanları atamalıdır', () => {
+    const valid = validateIpc(ConfirmOverwriteSchema, { targetTitle: 'hedef.docx', isDirty: true });
+    assert.equal(valid.success, true);
+    if (valid.success) {
+      assert.equal(valid.data.targetTitle, 'hedef.docx');
+      assert.equal(valid.data.isDirty, true);
+    }
+
+    const defaultApplied = validateIpc(ConfirmOverwriteSchema, {});
+    assert.equal(defaultApplied.success, true);
+    if (defaultApplied.success) {
+      assert.equal(defaultApplied.data.targetTitle, 'Belge');
+      assert.equal(defaultApplied.data.isDirty, false);
     }
   });
 });

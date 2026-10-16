@@ -43,7 +43,7 @@ interface AppState {
   settings: AppSettings;
 
   // Actions
-  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat, filePath?: string) => string;
+  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat) => string;
   closeTab: (id: string) => void;
   requestCloseTab: (id?: string) => Promise<boolean>;
   setRequestCloseTab: (fn: (id?: string) => Promise<boolean>) => void;
@@ -125,13 +125,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   settings: DEFAULT_SETTINGS,
 
-  addTab: (title, content, docId, format = 'docx', filePath) => {
+  addTab: (title, content, docId, format = 'docx') => {
     const { tabs } = get();
 
-    // 1. Zaten açık olan belge kontrolü (docId veya filePath eşleşmesi)
-    const existing = tabs.find(
-      (t) => (docId && t.docId === docId) || (filePath && t.filePath === filePath)
-    );
+    // 1. Zaten açık olan belge kontrolü (yalnızca docId ile)
+    const existing = docId ? tabs.find((t) => t.docId === docId) : undefined;
     if (existing) {
       set({ activeTabId: existing.id });
       return existing.id;
@@ -153,7 +151,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         title: title || currentActive.title,
         content: content || '<p></p>',
         docId,
-        filePath,
         isDirty: false,
         format: format || 'docx'
       };
@@ -169,7 +166,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       title: title || `Adsız Belge ${tabNumber}`,
       content: content || '<p></p>',
       docId,
-      filePath,
       isDirty: false,
       format
     };

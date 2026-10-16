@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import Store from 'electron-store';
-import { UpdateStatusData } from '../shared/types';
+import { registerSecureHandler } from './ipcSecurity';
+import { setAppQuitting } from './index';
 
 const store = new Store();
 
@@ -81,7 +82,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   });
 
   // Renderer IPC Handlers
-  ipcMain.handle('updater:check', async () => {
+  registerSecureHandler('updater:check', async () => {
     if (!app.isPackaged) {
       return {
         success: false,
@@ -97,12 +98,13 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('updater:install', () => {
+  registerSecureHandler('updater:install', () => {
     // Quits app and runs installer
+    setAppQuitting(true);
     autoUpdater.quitAndInstall(false, true);
   });
 
-  ipcMain.handle('updater:get-version', () => {
+  registerSecureHandler('updater:get-version', () => {
     return app.getVersion();
   });
 
