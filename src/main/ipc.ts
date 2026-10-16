@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, shell, nativeTheme } from 'electron';
+import { ipcMain, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
 import Store from 'electron-store';
 import {
   showOpenFilePicker,
@@ -10,6 +10,7 @@ import {
 } from './files';
 import { exportToPdf } from './pdf';
 import { detectTools } from './convert';
+import { documentRegistry } from './registry';
 import {
   getApiKey,
   saveApiKey,
@@ -53,7 +54,8 @@ import {
   ProofreadBlocksSchema,
   TranslateSchema,
   ImagePromptSchema,
-  ImageGenSchema
+  ImageGenSchema,
+  ExportPdfSchema
 } from './ipcSchemas';
 
 const store = new Store();
@@ -101,13 +103,47 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     const data = typeof validated.data.content === 'string'
       ? validated.data.content
-      : Buffer.from(validated.data.content);
+      : Buffer.from(
+          (validated.data.content as any).buffer || validated.data.content,
+          (validated.data.content as any).byteOffset || 0,
+          (validated.data.content as any).byteLength || (validated.data.content as any).length
+        );
 
     return saveFile(validated.data.docId, data);
   });
 
-  ipcMain.handle('files:exportPdf', async (_, htmlContent: string, outputPath: string) => {
-    return exportToPdf(htmlContent, outputPath);
+  ipcMain.handle('files:unregister', async (_, docId: unknown) => {
+    if (typeof docId === 'string' && docId) {
+      return documentRegistry.unregister(docId);
+    }
+    return false;
+  });
+
+  ipcMain.handle('files:exportPdf', async (_, htmlContent: unknown, defaultTitle: unknown) => {
+    const validated = validateIpc(ExportPdfSchema, { htmlContent, defaultTitle });
+    if (!validated.success) {
+      return { success: false, error: validated.error };
+    }
+
+    const baseTitle = (typeof validated.data.defaultTitle === 'string' && validated.data.defaultTitle.trim())
+      ? validated.data.defaultTitle.trim().replace(/\.pdf$/i, '')
+      : 'Belge';
+
+    const saveRes = await dialog.showSaveDialog(mainWindow, {
+      title: 'PDF Olarak Dışa Aktar',
+      defaultPath: `${baseTitle}.pdf`,
+      filters: [{ name: 'PDF Belgesi (*.pdf)', extensions: ['pdf'] }]
+    });
+
+    if (saveRes.canceled || !saveRes.filePath) {
+      return { success: true, canceled: true };
+    }
+
+    const success = await exportToPdf(validated.data.htmlContent, saveRes.filePath);
+    if (!success) {
+      return { success: false, error: 'PDF dosyası oluşturulamadı.' };
+    }
+    return { success: true, canceled: false, filePath: saveRes.filePath };
   });
 
   ipcMain.handle('files:saveAsset', async (_, dataUrl: unknown) => {

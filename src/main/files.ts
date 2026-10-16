@@ -185,10 +185,12 @@ export async function showSaveFilePicker(
   defaultTitle: string,
   preferredFormat: DocumentFormat = 'docx'
 ): Promise<ShowSaveDialogResult> {
-  const filterMap: Record<DocumentFormat, { name: string; extensions: string[] }> = {
+  // PDF ayrı bir dışa aktarma komutu olduğu için kayıt diyalogunda sunulmaz
+  const safePreferred: DocumentFormat = preferredFormat === 'pdf' ? 'docx' : preferredFormat;
+
+  const filterMap: Record<string, { name: string; extensions: string[] }> = {
     docx: { name: 'Word Belgesi (*.docx)', extensions: ['docx'] },
     md: { name: 'Markdown (*.md)', extensions: ['md'] },
-    pdf: { name: 'PDF Belgesi (*.pdf)', extensions: ['pdf'] },
     html: { name: 'HTML Belgesi (*.html)', extensions: ['html'] },
     txt: { name: 'Metin Dosyası (*.txt)', extensions: ['txt'] },
     odt: { name: 'OpenDocument Metni (*.odt)', extensions: ['odt'] },
@@ -196,18 +198,18 @@ export async function showSaveFilePicker(
     doc: { name: 'Word 97-2003 (*.doc)', extensions: ['doc'] }
   };
 
-  const activeFilter = filterMap[preferredFormat] || filterMap.docx;
+  const activeFilter = filterMap[safePreferred] || filterMap.docx;
 
   const result = await dialog.showSaveDialog(browserWindow, {
     title: 'Belgeyi Kaydet',
-    defaultPath: defaultTitle.endsWith(`.${preferredFormat}`) ? defaultTitle : `${defaultTitle}.${preferredFormat}`,
+    defaultPath: defaultTitle.endsWith(`.${safePreferred}`) ? defaultTitle : `${defaultTitle}.${safePreferred}`,
     filters: [
       activeFilter,
       filterMap.docx,
       filterMap.md,
       filterMap.html,
       filterMap.txt
-    ]
+    ].filter((f, idx, arr) => arr.findIndex((x) => x.name === f.name) === idx)
   });
 
   if (result.canceled || !result.filePath) {
@@ -216,7 +218,7 @@ export async function showSaveFilePicker(
 
   const chosenPath = result.filePath;
   const ext = path.extname(chosenPath).toLowerCase().replace('.', '') as DocumentFormat;
-  const finalFormat = ext || preferredFormat;
+  const finalFormat = ext || safePreferred;
   const title = path.basename(chosenPath);
 
   const entry = documentRegistry.register(chosenPath, finalFormat, title);
@@ -232,7 +234,7 @@ export async function showSaveFilePicker(
 
 export async function saveFile(
   docId: string,
-  content: string | Buffer
+  content: string | Buffer | Uint8Array
 ): Promise<FileSaveResult> {
   const entry = documentRegistry.get(docId);
   if (!entry) {
@@ -243,13 +245,51 @@ export async function saveFile(
     };
   }
 
-  // Format is determined strictly from the registry entry, never from renderer input
-  if (entry.format === 'docx' && typeof content === 'string') {
+  // 1. PDF saveFile ile kaydedilemez
+  if (entry.format === 'pdf') {
     return {
       success: false,
-      error: 'DOCX belgesi metin olarak kaydedilemez; ikili veri (Buffer/Uint8Array) bekleniyor.',
+      error: 'PDF dosyaları saveFile ile kaydedilemez; "PDF olarak dışa aktar" komutu kullanılmalıdır.',
       errorCode: 'ERR_INVALID_FORMAT'
     };
+  }
+
+  // 2. DOCX kontrolü: Yalnızca Buffer/Uint8Array kabul et ve "PK" (0x50 0x4B) sihirli baytlarını doğrula
+  if (entry.format === 'docx') {
+    if (typeof content === 'string') {
+      return {
+        success: false,
+        error: 'DOCX belgesi metin olarak kaydedilemez; ikili veri (Buffer/Uint8Array) bekleniyor.',
+        errorCode: 'ERR_INVALID_FORMAT'
+      };
+    }
+
+    const buf = Buffer.isBuffer(content)
+      ? content
+      : Buffer.from(
+          (content as any).buffer || content,
+          (content as any).byteOffset || 0,
+          (content as any).byteLength || content.length
+        );
+
+    if (buf.length < 2 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
+      return {
+        success: false,
+        error: 'Geçersiz DOCX içeriği: dosya "PK" (0x50 0x4B) sihirli baytlarıyla başlamıyor.',
+        errorCode: 'ERR_INVALID_FORMAT'
+      };
+    }
+  }
+
+  // 3. MD ve TXT kontrolü: Yalnızca string kabul et; Buffer/Uint8Array gelirse reddet, dosyaya HİÇBİR ŞEY yazma
+  if (entry.format === 'md' || entry.format === 'txt') {
+    if (typeof content !== 'string') {
+      return {
+        success: false,
+        error: `${entry.format.toUpperCase()} belgesi ikili veri olarak kaydedilemez; düz metin (string) bekleniyor.`,
+        errorCode: 'ERR_INVALID_FORMAT'
+      };
+    }
   }
 
   const dir = path.dirname(entry.filePath);

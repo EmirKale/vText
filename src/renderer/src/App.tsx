@@ -121,6 +121,13 @@ export const App: React.FC = () => {
           return;
         }
 
+        // Ctrl+Alt+P veya Ctrl+Shift+D: PDF Olarak Dışa Aktar
+        if ((e.altKey && (e.key === 'p' || e.key === 'P')) || (e.shiftKey && (e.key === 'd' || e.key === 'D'))) {
+          e.preventDefault();
+          handleExportPdf();
+          return;
+        }
+
         // Ctrl+P: Yazdır
         if (e.key === 'p' || e.key === 'P') {
           e.preventDefault();
@@ -166,40 +173,47 @@ export const App: React.FC = () => {
   const handleSaveFile = async (saveAs: boolean = false) => {
     if (!activeTab || !editorInstance || !window.kalem) return;
 
+    const oldDocId = activeTab.docId;
     let docId = activeTab.docId;
-    const format = activeTab.format || 'docx';
+    let format = activeTab.format || 'docx';
 
     if (!docId || saveAs) {
       const chosen = await window.kalem.files.showSaveDialog(activeTab.title, format);
       if (!chosen || chosen.canceled || !chosen.docId) return;
       docId = chosen.docId;
+      format = chosen.format ?? format;
+
+      // Farklı kaydet yapılıyorsa ve önceki docId varsa eskisini registry'den sil
+      if (saveAs && oldDocId && oldDocId !== docId) {
+        window.kalem.files.unregister(oldDocId).catch(() => {});
+      }
+
       updateTabMeta(activeTab.id, {
         docId: chosen.docId,
         title: chosen.title || activeTab.title,
-        format: chosen.format || format
+        format: format
       });
     }
 
     if (!docId) return;
 
     try {
-      const currentFormat = activeTab.format || 'docx';
       let saveRes;
 
-      if (currentFormat === 'docx') {
+      if (format === 'docx') {
         const json = editorInstance.getJSON();
         const docxBuffer = await exportTipTapJsonToDocx(json, activeTab.title, {
           margin: pageMargin,
           orientation: pageOrientation
         });
         saveRes = await window.kalem.files.save(docId, docxBuffer);
-      } else if (currentFormat === 'md') {
+      } else if (format === 'md') {
         const json = editorInstance.getJSON();
         const mdText = tipTapJsonToMarkdown(json);
         saveRes = await window.kalem.files.save(docId, mdText);
-      } else if (currentFormat === 'pdf') {
-        const html = editorInstance.getHTML();
-        saveRes = await window.kalem.files.exportPdf(html);
+      } else if (format === 'txt') {
+        const text = editorInstance.getText();
+        saveRes = await window.kalem.files.save(docId, text);
       } else {
         const html = editorInstance.getHTML();
         saveRes = await window.kalem.files.save(docId, html);
@@ -216,6 +230,19 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       alert(`Kaydetme hatası: ${err.message}`);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!activeTab || !editorInstance || !window.kalem) return;
+    try {
+      const html = editorInstance.getHTML();
+      const res = await window.kalem.files.exportPdf(html, activeTab.title);
+      if (res && res.error) {
+        alert(`PDF aktarma hatası: ${res.error}`);
+      }
+    } catch (err: any) {
+      alert(`PDF aktarma hatası: ${err.message}`);
     }
   };
 

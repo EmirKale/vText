@@ -18,6 +18,16 @@ export const DocumentFormatSchema = z.enum([
   'pdf'
 ]);
 
+export const SaveDialogFormatSchema = z.enum([
+  'docx',
+  'md',
+  'txt',
+  'html',
+  'odt',
+  'rtf',
+  'doc'
+]);
+
 // Windows-safe filename regex (no < > : " / \ | ? *)
 export const SafeFileNameRegex = /^[^<>:"/\\|?*\x00-\x1F]+$/;
 
@@ -31,14 +41,27 @@ export const ShowSaveDialogSchema = z.object({
     .refine((val) => SafeFileNameRegex.test(val), {
       message: 'Dosya adı geçersiz karakterler (< > : " / \\ | ? *) içeremez.'
     }),
-  format: DocumentFormatSchema
+  format: SaveDialogFormatSchema
 });
+
+const isBinaryBuffer = (val: unknown): val is Uint8Array | Buffer => {
+  if (!val || typeof val !== 'object') return false;
+  return (
+    val instanceof Uint8Array ||
+    Buffer.isBuffer(val) ||
+    ArrayBuffer.isView(val) ||
+    (val as any).constructor?.name === 'Uint8Array' ||
+    (val as any).constructor?.name === 'Buffer'
+  );
+};
 
 export const SaveFileSchema = z.object({
   docId: z.string().uuid('Geçersiz belge kimliği formatı (UUID bekleniyor).'),
   content: z.union([
     z.string().max(MAX_CONTENT_STRING_LENGTH, 'Metin içeriği 50MB sınırını aşıyor.'),
-    z.instanceof(Uint8Array).refine((buf) => buf.byteLength <= MAX_CONTENT_BUFFER_BYTES, {
+    z.custom<Uint8Array | Buffer>(isBinaryBuffer, {
+      message: 'İkili dosya içeriği (Buffer veya Uint8Array) bekleniyor.'
+    }).refine((buf) => (buf as Uint8Array | Buffer).byteLength <= MAX_CONTENT_BUFFER_BYTES, {
       message: 'İkili dosya içeriği 100MB sınırını aşıyor.'
     })
   ])

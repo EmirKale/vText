@@ -144,6 +144,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   closeTab: (id) => {
     const { tabs, activeTabId } = get();
+    const tabToClose = tabs.find((t) => t.id === id);
+    if (tabToClose?.docId && typeof window !== 'undefined' && (window as any).kalem?.files?.unregister) {
+      (window as any).kalem.files.unregister(tabToClose.docId).catch(() => {});
+    }
+
     if (tabs.length === 1) {
       // If closing the only tab, reset to an empty untitled tab
       const newTab: DocumentTab = {

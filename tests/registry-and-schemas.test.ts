@@ -178,8 +178,8 @@ describe('Zod Schemas - SaveFileSchema', () => {
 });
 
 describe('Zod Schemas - ShowSaveDialogSchema', () => {
-  it('geçerli başlık ve desteklenen formatları kabul etmelidir', () => {
-    const formats = ['docx', 'md', 'txt', 'html', 'odt', 'rtf', 'doc', 'pdf'] as const;
+  it('geçerli başlık ve desteklenen formatları kabul etmelidir (PDF hariç)', () => {
+    const formats = ['docx', 'md', 'txt', 'html', 'odt', 'rtf', 'doc'] as const;
     for (const fmt of formats) {
       const res = validateIpc(ShowSaveDialogSchema, {
         defaultTitle: 'Gecerli Belge Adi',
@@ -187,6 +187,14 @@ describe('Zod Schemas - ShowSaveDialogSchema', () => {
       });
       assert.equal(res.success, true, `Format ${fmt} kabul edilmeliydi`);
     }
+  });
+
+  it('PDF formatı save dialog şemasında reddedilmelidir (PDF ayrı komutla aktarılır)', () => {
+    const res = validateIpc(ShowSaveDialogSchema, {
+      defaultTitle: 'Rapor',
+      format: 'pdf'
+    });
+    assert.equal(res.success, false, 'PDF formatı showSaveDialog tarafından reddedilmeliydi');
   });
 
   it('geçersiz veya tehlikeli dosya adı karakterleri içeren başlıkları reddetmelidir', () => {
@@ -316,6 +324,18 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     assert.match(result.error || '', /DOCX belgesi metin olarak kaydedilemez/);
   });
 
+  it('kayıtlı DOCX formatına "PK" ile başlamayan geçersiz ikili veri verildiğinde ERR_INVALID_FORMAT dönmeli ve dosya oluşmamalıdır', async () => {
+    const docxPath = path.join(tmpDir, 'test_invalid_magic.docx');
+    const entry = DocumentRegistry.getInstance().register(docxPath, 'docx', 'Word Bad Magic');
+
+    const invalidBuffer = Buffer.from([0x00, 0x01, 0x02, 0x03]); // Not PK
+    const result = await saveFile(entry.docId, invalidBuffer);
+    assert.equal(result.success, false);
+    assert.equal(result.errorCode, 'ERR_INVALID_FORMAT');
+    assert.match(result.error || '', /"PK"/);
+    assert.equal(fs.existsSync(docxPath), false, 'Hatalı DOCX dosyası diske yazılmamalıdır');
+  });
+
   it('kayıtlı DOCX formatına Uint8Array/Buffer içeriği verildiğinde başarıyla kaydetmelidir', async () => {
     const docxPath = path.join(tmpDir, 'test_ok.docx');
     const entry = DocumentRegistry.getInstance().register(docxPath, 'docx', 'Word OK');
@@ -324,6 +344,29 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     const result = await saveFile(entry.docId, buffer);
     assert.equal(result.success, true);
     assert.equal(fs.existsSync(docxPath), true);
+  });
+
+  it('kayıtlı PDF formatı saveFile ile kaydedilmek istendiğinde ERR_INVALID_FORMAT ile reddedilmelidir', async () => {
+    const pdfPath = path.join(tmpDir, 'test.pdf');
+    const entry = DocumentRegistry.getInstance().register(pdfPath, 'pdf', 'PDF Doc');
+
+    const result = await saveFile(entry.docId, '%PDF-1.4 sample content');
+    assert.equal(result.success, false);
+    assert.equal(result.errorCode, 'ERR_INVALID_FORMAT');
+    assert.match(result.error || '', /saveFile ile kaydedilemez/);
+    assert.equal(fs.existsSync(pdfPath), false, 'Reddedilen PDF dosyası diske yazılmamalıdır');
+  });
+
+  it('md kaydına Uint8Array verilirse reddedilmeli ve dosya oluşmamalı', async () => {
+    const mdPath = path.join(tmpDir, 'binary_to_md.md');
+    const entry = DocumentRegistry.getInstance().register(mdPath, 'md', 'Markdown Binary Test');
+
+    const binaryData = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const result = await saveFile(entry.docId, binaryData as any);
+    assert.equal(result.success, false);
+    assert.equal(result.errorCode, 'ERR_INVALID_FORMAT');
+    assert.match(result.error || '', /düz metin/i);
+    assert.equal(fs.existsSync(mdPath), false, 'Uint8Array gönderildiğinde .md dosyası ASLA oluşturulmamalıdır');
   });
 
   it('kayıtlı MD formatına metin verildiğinde başarıyla kaydetmelidir', async () => {

@@ -37,8 +37,13 @@ export const kalemApi = {
       ipcRenderer.invoke('files:showSaveDialog', defaultTitle, format),
     save: (docId: string, content: string | Uint8Array): Promise<FileSaveResult> =>
       ipcRenderer.invoke('files:save', docId, content),
-    exportPdf: (htmlContent: string, outputPath?: string) =>
-      ipcRenderer.invoke('files:exportPdf', htmlContent, outputPath),
+    unregister: (docId: string): Promise<boolean> =>
+      ipcRenderer.invoke('files:unregister', docId),
+    exportPdf: (
+      htmlContent: string,
+      defaultTitle?: string
+    ): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+      ipcRenderer.invoke('files:exportPdf', htmlContent, defaultTitle),
     saveAsset: (dataUrl: string) => ipcRenderer.invoke('files:saveAsset', dataUrl),
     onOpenFile: (callback: (result: FileOpenResult) => void) => {
       const listener = (_: any, result: FileOpenResult) => callback(result);
