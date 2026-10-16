@@ -43,7 +43,7 @@ interface AppState {
   settings: AppSettings;
 
   // Actions
-  addTab: (title?: string, content?: string, filePath?: string, format?: DocumentFormat) => string;
+  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat) => string;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTabContent: (id: string, content: string) => void;
@@ -123,14 +123,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   settings: DEFAULT_SETTINGS,
 
-  addTab: (title, content, filePath, format = 'docx') => {
+  addTab: (title, content, docId, format = 'docx') => {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tabNumber = get().tabs.length + 1;
     const newTab: DocumentTab = {
       id,
       title: title || `Adsız Belge ${tabNumber}`,
       content: content || '<p></p>',
-      filePath,
+      docId,
       isDirty: false,
       format
     };

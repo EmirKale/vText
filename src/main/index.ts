@@ -3,7 +3,7 @@ import path from 'path';
 import Store from 'electron-store';
 import { registerIpcHandlers } from './ipc';
 import { initAutoUpdater } from './updater';
-import { registerKalemAssetProtocol } from './files';
+import { registerKalemAssetProtocol, openFileByPath } from './files';
 import { getApiKey } from './keystore';
 
 const store = new Store();
@@ -30,20 +30,24 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_, argv) => {
+  app.on('second-instance', async (_, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
 
       const openedFile = parseArgvForFile(argv);
       if (openedFile) {
-        mainWindow.webContents.send('app:open-file', openedFile);
+        const doc = await openFileByPath(openedFile);
+        if (doc.success) {
+          mainWindow.webContents.send('app:open-file', doc);
+        }
       }
     }
   });
 
   fileToOpenOnReady = parseArgvForFile(process.argv);
 }
+
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds') as { width?: number; height?: number; x?: number; y?: number } | undefined;
@@ -84,9 +88,13 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
     if (fileToOpenOnReady) {
-      setTimeout(() => {
-        mainWindow?.webContents.send('app:open-file', fileToOpenOnReady);
-      }, 600);
+      openFileByPath(fileToOpenOnReady).then((doc) => {
+        if (doc.success && mainWindow) {
+          setTimeout(() => {
+            mainWindow?.webContents.send('app:open-file', doc);
+          }, 600);
+        }
+      });
     }
   });
 

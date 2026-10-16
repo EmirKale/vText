@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   GenerateArticleOptions,
   RewriteOptions,
@@ -6,7 +6,10 @@ import {
   ImageGenOptions,
   AppSettings,
   DocumentFormat,
-  UpdateStatusData
+  UpdateStatusData,
+  FileOpenResult,
+  FileSaveResult,
+  ShowSaveDialogResult
 } from '../shared/types';
 
 export const kalemApi = {
@@ -14,16 +17,31 @@ export const kalemApi = {
     setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark)
   },
   files: {
-    open: (filePath?: string) => ipcRenderer.invoke('files:open', filePath),
-    showSaveDialog: (defaultTitle: string, format: DocumentFormat) =>
+    open: (): Promise<FileOpenResult> => ipcRenderer.invoke('files:open'),
+    openDropped: async (file: File): Promise<FileOpenResult> => {
+      if (!file || typeof file !== 'object') {
+        return { success: false, error: 'Geçersiz dosya nesnesi.' };
+      }
+      let filePath: string;
+      try {
+        filePath = webUtils.getPathForFile(file);
+      } catch {
+        return { success: false, error: 'Dosya yolu File nesnesinden alınamadı.' };
+      }
+      if (!filePath) {
+        return { success: false, error: 'Dosya yolu alınamadı.' };
+      }
+      return ipcRenderer.invoke('files:openDropped', filePath);
+    },
+    showSaveDialog: (defaultTitle: string, format: DocumentFormat): Promise<ShowSaveDialogResult> =>
       ipcRenderer.invoke('files:showSaveDialog', defaultTitle, format),
-    save: (filePath: string, content: string | Uint8Array) =>
-      ipcRenderer.invoke('files:save', filePath, content),
-    exportPdf: (htmlContent: string, outputPath: string) =>
+    save: (docId: string, content: string | Uint8Array): Promise<FileSaveResult> =>
+      ipcRenderer.invoke('files:save', docId, content),
+    exportPdf: (htmlContent: string, outputPath?: string) =>
       ipcRenderer.invoke('files:exportPdf', htmlContent, outputPath),
     saveAsset: (dataUrl: string) => ipcRenderer.invoke('files:saveAsset', dataUrl),
-    onOpenFile: (callback: (filePath: string) => void) => {
-      const listener = (_: any, path: string) => callback(path);
+    onOpenFile: (callback: (result: FileOpenResult) => void) => {
+      const listener = (_: any, result: FileOpenResult) => callback(result);
       ipcRenderer.on('app:open-file', listener);
       return () => ipcRenderer.removeListener('app:open-file', listener);
     }

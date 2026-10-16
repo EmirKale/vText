@@ -50,10 +50,9 @@ export const App: React.FC = () => {
       });
 
       // Listen for files opened via Windows file association / double-click
-      const unsubscribe = window.kalem.files.onOpenFile(async (filePath) => {
-        const result = await window.kalem.files.open(filePath);
+      const unsubscribe = window.kalem.files.onOpenFile((result) => {
         if (result.success && result.content !== undefined) {
-          addTab(result.title, result.content, result.filePath, result.format);
+          addTab(result.title, result.content, result.docId, result.format);
         }
       });
 
@@ -160,57 +159,67 @@ export const App: React.FC = () => {
     if (!window.kalem) return;
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
-      addTab(res.title, res.content, res.filePath, res.format);
+      addTab(res.title, res.content, res.docId, res.format);
     }
   };
 
   const handleSaveFile = async (saveAs: boolean = false) => {
     if (!activeTab || !editorInstance || !window.kalem) return;
 
-    let targetPath = activeTab.filePath;
+    let docId = activeTab.docId;
     const format = activeTab.format || 'docx';
 
-    if (!targetPath || saveAs) {
+    if (!docId || saveAs) {
       const chosen = await window.kalem.files.showSaveDialog(activeTab.title, format);
-      if (!chosen) return;
-      targetPath = chosen;
+      if (!chosen || chosen.canceled || !chosen.docId) return;
+      docId = chosen.docId;
+      updateTabMeta(activeTab.id, {
+        docId: chosen.docId,
+        title: chosen.title || activeTab.title,
+        format: chosen.format || format
+      });
     }
 
-    if (!targetPath) return;
+    if (!docId) return;
 
     try {
-      if (targetPath.endsWith('.docx')) {
+      const currentFormat = activeTab.format || 'docx';
+      let saveRes;
+
+      if (currentFormat === 'docx') {
         const json = editorInstance.getJSON();
         const docxBuffer = await exportTipTapJsonToDocx(json, activeTab.title, {
           margin: pageMargin,
           orientation: pageOrientation
         });
-        await window.kalem.files.save(targetPath, docxBuffer);
-      } else if (targetPath.endsWith('.md')) {
+        saveRes = await window.kalem.files.save(docId, docxBuffer);
+      } else if (currentFormat === 'md') {
         const json = editorInstance.getJSON();
         const mdText = tipTapJsonToMarkdown(json);
-        await window.kalem.files.save(targetPath, mdText);
-      } else if (targetPath.endsWith('.pdf')) {
+        saveRes = await window.kalem.files.save(docId, mdText);
+      } else if (currentFormat === 'pdf') {
         const html = editorInstance.getHTML();
-        await window.kalem.files.exportPdf(html, targetPath);
+        saveRes = await window.kalem.files.exportPdf(html);
       } else {
         const html = editorInstance.getHTML();
-        await window.kalem.files.save(targetPath, html);
+        saveRes = await window.kalem.files.save(docId, html);
       }
 
-      const fileName = targetPath.split(/[\\/]/).pop() || activeTab.title;
-      updateTabMeta(activeTab.id, {
-        filePath: targetPath,
-        title: fileName,
-        isDirty: false,
-        lastSavedAt: Date.now()
-      });
+      if (saveRes && saveRes.success) {
+        updateTabMeta(activeTab.id, {
+          title: saveRes.title || activeTab.title,
+          isDirty: false,
+          lastSavedAt: Date.now()
+        });
+      } else if (saveRes && saveRes.error) {
+        alert(`Kaydetme hatası: ${saveRes.error}`);
+      }
     } catch (err: any) {
       alert(`Kaydetme hatası: ${err.message}`);
     }
   };
 
-  // Drag and Drop File handling
+  // Drag and Drop File handling (File object passed directly to preload)
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -221,11 +230,12 @@ export const App: React.FC = () => {
     e.stopPropagation();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      const filePath = (file as any).path;
-      if (filePath && window.kalem) {
-        const res = await window.kalem.files.open(filePath);
+      if (file && window.kalem) {
+        const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
-          addTab(res.title, res.content, res.filePath, res.format);
+          addTab(res.title, res.content, res.docId, res.format);
+        } else if (res.error) {
+          alert(`Dosya açılamadı: ${res.error}`);
         }
       }
     }

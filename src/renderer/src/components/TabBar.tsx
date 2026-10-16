@@ -22,7 +22,7 @@ export const TabBar: React.FC = () => {
               }
             }}
             onClick={() => setActiveTab(tab.id)}
-            title={tab.filePath || tab.title}
+            title={tab.title}
             className={`group relative flex items-center gap-2 h-[32px] pl-3 pr-1.5 min-w-[120px] max-w-[220px] rounded-t-lg text-ui cursor-default transition-colors ${
               isActive
                 ? 'bg-desk text-ink font-medium'

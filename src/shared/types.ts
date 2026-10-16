@@ -3,6 +3,7 @@ export type DocumentFormat = 'docx' | 'md' | 'txt' | 'html' | 'odt' | 'rtf' | 'd
 export interface DocumentTab {
   id: string;
   title: string;
+  docId?: string;
   filePath?: string;
   content: string; // TipTap HTML or JSON string
   isDirty: boolean;
@@ -92,17 +93,29 @@ export interface OpenRouterModel {
 
 export interface FileSaveResult {
   success: boolean;
-  filePath?: string;
+  docId?: string;
+  title?: string;
   error?: string;
+  errorCode?: string;
   warning?: string;
 }
 
 export interface FileOpenResult {
   success: boolean;
-  filePath?: string;
+  docId?: string;
   title?: string;
   content?: string;
   format?: DocumentFormat;
   error?: string;
   warning?: string;
 }
+
+export interface ShowSaveDialogResult {
+  success: boolean;
+  canceled: boolean;
+  docId?: string;
+  title?: string;
+  format?: DocumentFormat;
+  error?: string;
+}
+

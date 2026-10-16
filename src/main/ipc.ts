@@ -3,6 +3,7 @@ import Store from 'electron-store';
 import {
   showOpenFilePicker,
   openFileByPath,
+  openDroppedFile,
   showSaveFilePicker,
   saveFile,
   saveAssetImage
@@ -41,6 +42,19 @@ import {
   ProofreadItem,
   ImageGenOptions
 } from '../shared/types';
+import {
+  validateIpc,
+  ShowSaveDialogSchema,
+  SaveFileSchema,
+  SaveAssetSchema,
+  OpenDroppedFilePathSchema,
+  GenerateArticleSchema,
+  RewriteSchema,
+  ProofreadBlocksSchema,
+  TranslateSchema,
+  ImagePromptSchema,
+  ImageGenSchema
+} from './ipcSchemas';
 
 const store = new Store();
 
@@ -58,29 +72,50 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
-  // 1. Filesystem Handlers
-  ipcMain.handle('files:open', async (_, filePath?: string) => {
-    if (filePath) {
-      return openFileByPath(filePath);
-    }
+  // 1. Filesystem Handlers (Hardened: No raw file paths accepted from renderer)
+  ipcMain.handle('files:open', async () => {
     return showOpenFilePicker(mainWindow);
   });
 
-  ipcMain.handle('files:showSaveDialog', async (_, defaultTitle: string, format: any) => {
-    return showSaveFilePicker(mainWindow, defaultTitle, format);
+  ipcMain.handle('files:openDropped', async (_, filePath: unknown) => {
+    const validated = validateIpc(OpenDroppedFilePathSchema, { filePath });
+    if (!validated.success) {
+      return { success: false, error: validated.error };
+    }
+    return openDroppedFile(validated.data.filePath);
   });
 
-  ipcMain.handle('files:save', async (_, filePath: string, content: string | Uint8Array) => {
-    const data = typeof content === 'string' ? content : Buffer.from(content);
-    return saveFile(filePath, data);
+  ipcMain.handle('files:showSaveDialog', async (_, defaultTitle: unknown, format: unknown) => {
+    const validated = validateIpc(ShowSaveDialogSchema, { defaultTitle, format });
+    if (!validated.success) {
+      return { success: false, canceled: true, error: validated.error };
+    }
+    return showSaveFilePicker(mainWindow, validated.data.defaultTitle, validated.data.format);
+  });
+
+  ipcMain.handle('files:save', async (_, docId: unknown, content: unknown) => {
+    const validated = validateIpc(SaveFileSchema, { docId, content });
+    if (!validated.success) {
+      return { success: false, error: validated.error };
+    }
+
+    const data = typeof validated.data.content === 'string'
+      ? validated.data.content
+      : Buffer.from(validated.data.content);
+
+    return saveFile(validated.data.docId, data);
   });
 
   ipcMain.handle('files:exportPdf', async (_, htmlContent: string, outputPath: string) => {
     return exportToPdf(htmlContent, outputPath);
   });
 
-  ipcMain.handle('files:saveAsset', async (_, dataUrl: string) => {
-    return saveAssetImage(dataUrl);
+  ipcMain.handle('files:saveAsset', async (_, dataUrl: unknown) => {
+    const validated = validateIpc(SaveAssetSchema, { dataUrl });
+    if (!validated.success) {
+      throw new Error(validated.error);
+    }
+    return saveAssetImage(validated.data.dataUrl);
   });
 
   // 2. Settings Handlers
@@ -156,15 +191,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Stream Article
   ipcMain.handle('ai:generateArticle', async (event, requestId: string, options: GenerateArticleOptions) => {
+    const validated = validateIpc(GenerateArticleSchema, options);
+    if (!validated.success) {
+      event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
+      return;
+    }
+
     const textModel = (store.get('textModel') as string) || DEFAULT_TEXT_MODEL;
-    const systemPrompt = getArticleSystemPrompt(options);
+    const systemPrompt = getArticleSystemPrompt(validated.data as any);
 
     await streamChat(
       requestId,
       textModel,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Konu: ${options.topic}\nEk Talimatlar: ${options.instructions || 'Yok'}` }
+        { role: 'user', content: `Konu: ${validated.data.topic}\nEk Talimatlar: ${validated.data.instructions || 'Yok'}` }
       ],
       {
         onChunk: (chunk) => event.sender.send(`ai:stream-chunk:${requestId}`, chunk),
@@ -176,15 +217,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Stream Rewrite
   ipcMain.handle('ai:rewrite', async (event, requestId: string, options: RewriteOptions) => {
+    const validated = validateIpc(RewriteSchema, options);
+    if (!validated.success) {
+      event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
+      return;
+    }
+
     const textModel = (store.get('textModel') as string) || DEFAULT_TEXT_MODEL;
-    const systemPrompt = getRewriteSystemPrompt(options);
+    const systemPrompt = getRewriteSystemPrompt(validated.data as any);
 
     await streamChat(
       requestId,
       textModel,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: options.text }
+        { role: 'user', content: validated.data.text }
       ],
       {
         onChunk: (chunk) => event.sender.send(`ai:stream-chunk:${requestId}`, chunk),
@@ -196,18 +243,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Proofread Page (Process blocks and return structured JSON)
   ipcMain.handle('ai:proofread', async (event, requestId: string, blocks: Array<{ id: string; text: string; index: number }>) => {
+    const validated = validateIpc(ProofreadBlocksSchema, blocks);
+    if (!validated.success) {
+      throw new Error(validated.error);
+    }
+
     const textModel = (store.get('textModel') as string) || DEFAULT_TEXT_MODEL;
     const systemPrompt = getProofreadSystemPrompt();
     const results: ProofreadItem[] = [];
 
     // Process blocks in parallel with limit of 3
     const concurrencyLimit = 3;
-    const queue = [...blocks];
+    const queue = [...validated.data];
     let processedCount = 0;
 
     async function processBlock(block: { id: string; text: string; index: number }): Promise<void> {
       try {
-        const { content, totalTokens } = await nonStreamChat(textModel, [
+        const { content } = await nonStreamChat(textModel, [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: block.text }
         ]);
@@ -217,10 +269,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         cleanJsonStr = cleanJsonStr.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/```$/, '').trim();
 
         const parsed = JSON.parse(cleanJsonStr);
-        const validated = ProofreadSchema.safeParse(parsed);
+        const parsedValidation = ProofreadSchema.safeParse(parsed);
 
-        if (validated.success) {
-          for (const item of validated.data) {
+        if (parsedValidation.success) {
+          for (const item of parsedValidation.data) {
             results.push({
               id: `${block.id}-${Math.random().toString(36).slice(2, 7)}`,
               original: item.original,
@@ -236,7 +288,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         processedCount++;
         event.sender.send(`ai:proofread-progress:${requestId}`, {
           processed: processedCount,
-          total: blocks.length
+          total: validated.data.length
         });
       }
     }
@@ -257,15 +309,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Translation (Stream translated section)
   ipcMain.handle('ai:translate', async (event, requestId: string, text: string, targetLanguage: string) => {
+    const validated = validateIpc(TranslateSchema, { text, targetLanguage });
+    if (!validated.success) {
+      event.sender.send(`ai:stream-error:${requestId}`, { error: validated.error });
+      return;
+    }
+
     const textModel = (store.get('textModel') as string) || DEFAULT_TEXT_MODEL;
-    const systemPrompt = getTranslationSystemPrompt(targetLanguage);
+    const systemPrompt = getTranslationSystemPrompt(validated.data.targetLanguage);
 
     await streamChat(
       requestId,
       textModel,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: text }
+        { role: 'user', content: validated.data.text }
       ],
       {
         onChunk: (chunk) => event.sender.send(`ai:stream-chunk:${requestId}`, chunk),
@@ -277,18 +335,28 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Generate Image Prompt from Text
   ipcMain.handle('ai:generateImagePrompt', async (_, text: string) => {
+    const validated = validateIpc(ImagePromptSchema, { text });
+    if (!validated.success) {
+      throw new Error(validated.error);
+    }
+
     const textModel = (store.get('textModel') as string) || DEFAULT_TEXT_MODEL;
     const systemPrompt = getImagePromptGeneratorSystemPrompt();
 
     const { content } = await nonStreamChat(textModel, [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: text }
+      { role: 'user', content: validated.data.text }
     ]);
     return content.trim();
   });
 
   // Generate Image with Seedream or selected model
   ipcMain.handle('ai:generateImage', async (_, options: ImageGenOptions) => {
+    const validated = validateIpc(ImageGenSchema, options);
+    if (!validated.success) {
+      throw new Error(validated.error);
+    }
+
     const imageModel = (store.get('imageModel') as string) || DEFAULT_IMAGE_MODEL;
 
     // Incorporate style into prompt
@@ -299,12 +367,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       '3d': '3D render, octane render, volumetric lighting, realistic materials',
       watercolor: 'watercolor painting, soft brushstrokes, artistic, traditional media'
     };
-    const styleHint = styleMap[options.style] || '';
-    const styledPrompt = styleHint ? `${options.prompt}, ${styleHint}` : options.prompt;
+    const styleHint = styleMap[validated.data.style] || '';
+    const styledPrompt = styleHint ? `${validated.data.prompt}, ${styleHint}` : validated.data.prompt;
 
-    const { imageDataUrl, totalTokens } = await generateAiImage(imageModel, styledPrompt, options.aspectRatio);
+    const { imageDataUrl, totalTokens } = await generateAiImage(imageModel, styledPrompt, validated.data.aspectRatio);
 
-    // Save image to %APPDATA%/Kalem/assets/
+    // Save image to %APPDATA%/vText/assets/
     const asset = await saveAssetImage(imageDataUrl);
 
     return {

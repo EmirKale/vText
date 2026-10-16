@@ -3,8 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import mammoth from 'mammoth';
-import { DocumentFormat, FileOpenResult, FileSaveResult } from '../shared/types';
+import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } from '../shared/types';
 import { convertWithPandocOrLibreOffice } from './convert';
+import { documentRegistry } from './registry';
+
+const SUPPORTED_EXTENSIONS = ['docx', 'md', 'txt', 'html', 'htm', 'odt', 'rtf', 'doc'];
 
 export function getAssetsDir(): string {
   const dir = path.join(app.getPath('appData'), 'vText', 'assets');
@@ -78,6 +81,32 @@ export async function showOpenFilePicker(browserWindow: BrowserWindow): Promise<
   return openFileByPath(targetPath);
 }
 
+export async function openDroppedFile(filePath: string): Promise<FileOpenResult> {
+  try {
+    if (!path.isAbsolute(filePath)) {
+      return { success: false, error: 'Geçersiz dosya yolu (mutlak yol bekleniyor).' };
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'Dosya sistemde bulunamadı.' };
+    }
+
+    const stat = await fs.promises.stat(filePath);
+    if (!stat.isFile()) {
+      return { success: false, error: 'Seçilen öğe geçerli bir dosya değil.' };
+    }
+
+    const ext = path.extname(filePath).toLowerCase().replace('.', '');
+    if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+      return { success: false, error: `Desteklenmeyen dosya uzantısı: .${ext}` };
+    }
+
+    return openFileByPath(filePath);
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Sürüklenen dosya açılamadı.' };
+  }
+}
+
 export async function openFileByPath(filePath: string): Promise<FileOpenResult> {
   try {
     const ext = path.extname(filePath).toLowerCase().replace('.', '') as DocumentFormat;
@@ -86,10 +115,11 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     // 1. Markdown, TXT, HTML
     if (ext === 'md' || ext === 'txt' || ext === 'html') {
       const content = await fs.promises.readFile(filePath, 'utf8');
+      const entry = documentRegistry.register(filePath, ext, title);
       return {
         success: true,
-        filePath,
-        title,
+        docId: entry.docId,
+        title: entry.title,
         content,
         format: ext
       };
@@ -99,13 +129,14 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     if (ext === 'docx') {
       const buffer = await fs.promises.readFile(filePath);
       const mammothResult = await mammoth.convertToHtml({ buffer });
+      const entry = documentRegistry.register(filePath, 'docx', title);
       return {
         success: true,
-        filePath,
-        title,
-        content: mammothResult.value, // HTML format for TipTap
+        docId: entry.docId,
+        title: entry.title,
+        content: mammothResult.value,
         format: 'docx',
-        warning: mammothResult.messages.length > 0 ? mammothResult.messages.map(m => m.message).join('\n') : undefined
+        warning: mammothResult.messages.length > 0 ? mammothResult.messages.map((m) => m.message).join('\n') : undefined
       };
     }
 
@@ -115,10 +146,11 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       if (converted.success && converted.outputPath) {
         const buffer = await fs.promises.readFile(converted.outputPath);
         const mammothResult = await mammoth.convertToHtml({ buffer });
+        const entry = documentRegistry.register(filePath, ext, title);
         return {
           success: true,
-          filePath,
-          title,
+          docId: entry.docId,
+          title: entry.title,
           content: mammothResult.value,
           format: ext
         };
@@ -132,10 +164,11 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
 
     // Fallback: try reading as UTF-8
     const rawContent = await fs.promises.readFile(filePath, 'utf8');
+    const entry = documentRegistry.register(filePath, ext, title);
     return {
       success: true,
-      filePath,
-      title,
+      docId: entry.docId,
+      title: entry.title,
       content: rawContent,
       format: ext
     };
@@ -151,7 +184,7 @@ export async function showSaveFilePicker(
   browserWindow: BrowserWindow,
   defaultTitle: string,
   preferredFormat: DocumentFormat = 'docx'
-): Promise<string | null> {
+): Promise<ShowSaveDialogResult> {
   const filterMap: Record<DocumentFormat, { name: string; extensions: string[] }> = {
     docx: { name: 'Word Belgesi (*.docx)', extensions: ['docx'] },
     md: { name: 'Markdown (*.md)', extensions: ['md'] },
@@ -177,17 +210,100 @@ export async function showSaveFilePicker(
     ]
   });
 
-  return result.canceled ? null : result.filePath;
+  if (result.canceled || !result.filePath) {
+    return { success: true, canceled: true };
+  }
+
+  const chosenPath = result.filePath;
+  const ext = path.extname(chosenPath).toLowerCase().replace('.', '') as DocumentFormat;
+  const finalFormat = ext || preferredFormat;
+  const title = path.basename(chosenPath);
+
+  const entry = documentRegistry.register(chosenPath, finalFormat, title);
+
+  return {
+    success: true,
+    canceled: false,
+    docId: entry.docId,
+    title: entry.title,
+    format: entry.format
+  };
 }
 
 export async function saveFile(
-  filePath: string,
+  docId: string,
   content: string | Buffer
 ): Promise<FileSaveResult> {
+  const entry = documentRegistry.get(docId);
+  if (!entry) {
+    return {
+      success: false,
+      error: 'Geçersiz belge kimliği veya oturum süresi dolmuş. Lütfen "Farklı Kaydet" seçeneğini kullanın.',
+      errorCode: 'ERR_INVALID_DOC_ID'
+    };
+  }
+
+  // Format is determined strictly from the registry entry, never from renderer input
+  if (entry.format === 'docx' && typeof content === 'string') {
+    return {
+      success: false,
+      error: 'DOCX belgesi metin olarak kaydedilemez; ikili veri (Buffer/Uint8Array) bekleniyor.',
+      errorCode: 'ERR_INVALID_FORMAT'
+    };
+  }
+
+  const dir = path.dirname(entry.filePath);
+  if (!fs.existsSync(dir)) {
+    return {
+      success: false,
+      error: 'Hedef dizin sistemde bulunamadı.',
+      errorCode: 'ERR_DIR_NOT_FOUND'
+    };
+  }
+
+  // Write to a temporary file in the same directory, fsync, then atomic rename
+  const tempPath = path.join(dir, `.${path.basename(entry.filePath)}.${crypto.randomUUID()}.tmp`);
+  let fileHandle: fs.promises.FileHandle | null = null;
+
   try {
-    await fs.promises.writeFile(filePath, content);
-    return { success: true, filePath };
+    fileHandle = await fs.promises.open(tempPath, 'w');
+    await fileHandle.writeFile(content);
+    await fileHandle.sync();
+    await fileHandle.close();
+    fileHandle = null;
+
+    // Atomic replace on same filesystem
+    await fs.promises.rename(tempPath, entry.filePath);
+    documentRegistry.update(docId, { lastSavedAt: Date.now() });
+
+    return {
+      success: true,
+      docId: entry.docId,
+      title: entry.title
+    };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Dosya kaydedilemedi.' };
+    if (fileHandle) {
+      try {
+        await fileHandle.close();
+      } catch {}
+    }
+    try {
+      if (fs.existsSync(tempPath)) {
+        await fs.promises.unlink(tempPath);
+      }
+    } catch {}
+
+    let errorCode = 'ERR_WRITE_FAILED';
+    if (err.code === 'ENOENT') {
+      errorCode = 'ERR_DIR_NOT_FOUND';
+    } else if (err.code === 'EACCES' || err.code === 'EPERM' || err.code === 'EROFS') {
+      errorCode = 'ERR_PERMISSION_DENIED';
+    }
+
+    return {
+      success: false,
+      error: err.message || 'Dosya kaydedilemedi.',
+      errorCode
+    };
   }
 }
