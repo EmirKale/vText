@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 import Store from 'electron-store';
@@ -98,10 +98,36 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     }
   });
 
-  registerSecureHandler('updater:install', () => {
+  registerSecureHandler('updater:install', async (_event, options?: { hasDirtyTabs?: boolean; force?: boolean }) => {
+    if (options?.hasDirtyTabs && !options?.force) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'question',
+          buttons: ['Kaydet', 'Yine de güncelle', 'İptal'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true,
+          title: 'vText Güncelleme',
+          message: 'Güncellemek için yeniden başlatılacak, kaydedilmemiş belgeler var: Kaydet / Yine de güncelle / İptal',
+          detail: 'Belgelerinizdeki kaydedilmemiş değişiklikleri kaydetmek istiyor musunuz?'
+        });
+
+        if (choice === 0) {
+          // Kaydet: pencere kapatma akışına yönlendirerek kaydetme diyaloğunu tetikle
+          mainWindow.webContents.send('app:request-close-window');
+          return { success: false, action: 'save' };
+        } else if (choice === 2) {
+          // İptal: güncellemeyi iptal et
+          return { success: false, action: 'cancel' };
+        }
+        // choice === 1: 'Yine de güncelle' seçildi, doğrudan devam et
+      }
+    }
+
     // Quits app and runs installer
     setAppQuitting(true);
     autoUpdater.quitAndInstall(false, true);
+    return { success: true };
   });
 
   registerSecureHandler('updater:get-version', () => {

@@ -138,7 +138,9 @@ export const SettingsModal: React.FC = () => {
 
   const handleInstallUpdate = async () => {
     if (!window.kalem?.updater) return;
-    await window.kalem.updater.install();
+    const tabs = useAppStore.getState().tabs;
+    const hasDirtyTabs = tabs.some((t) => t.isDirty);
+    await window.kalem.updater.install({ hasDirtyTabs });
   };
 
   const handleSaveRepo = () => {

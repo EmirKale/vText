@@ -2,7 +2,7 @@ import { app, ipcMain, BrowserWindow, shell, nativeTheme, dialog } from 'electro
 import path from 'path';
 import { pathToFileURL } from 'url';
 import Store from 'electron-store';
-import { clearCloseTimeout } from './index';
+import { clearCloseTimeout, stopCloseTimeout } from './index';
 import {
   showOpenFilePicker,
   openFileByPath,
@@ -183,6 +183,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   registerSecureHandler('window:cancelClose', async () => {
     clearCloseTimeout();
+    return true;
+  });
+
+  registerSecureHandler('window:promptingClose', async () => {
+    stopCloseTimeout();
     return true;
   });
 

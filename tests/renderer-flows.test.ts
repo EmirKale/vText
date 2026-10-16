@@ -280,6 +280,48 @@ describe('Store Akış Testleri: Yeni Belge -> Kaydet -> Tekrar Kaydet -> Farkl�
     assert.equal(useAppStore.getState().activeTabId, 'tab-1');
   });
 
+  it('6b. Büyük/Küçük Harf Farkı: Aynı dosya farklı büyük/küçük harfle açıldığında tek sekme vermelidir', () => {
+    // 1. Dosya ilk olarak büyük harfli yolla açılır
+    const pathUpper = 'C:\\Users\\Emir\\Belgeler\\Proje_Raporu.DOCX';
+    const entryUpper = registry.register(pathUpper, 'docx', 'Proje_Raporu.DOCX');
+
+    // Başlangıç store durumu
+    useAppStore.setState({
+      tabs: [],
+      activeTabId: ''
+    });
+
+    const tab1Id = useAppStore.getState().addTab(
+      entryUpper.title,
+      '<p>İlk İçerik</p>',
+      entryUpper.docId,
+      'docx'
+    );
+
+    assert.equal(useAppStore.getState().tabs.length, 1);
+    assert.equal(useAppStore.getState().activeTabId, tab1Id);
+
+    // 2. Aynı dosya Windows dosya yöneticisinden küçük harfli yolla açılmak istenir
+    const pathLower = 'c:\\users\\emir\\belgeler\\proje_raporu.docx';
+    const entryLower = registry.register(pathLower, 'docx', 'proje_raporu.docx');
+
+    // Windows yol normalleştirmesi sayesinde registry aynı docId'yi verir
+    assert.equal(entryLower.docId, entryUpper.docId);
+
+    // Renderer'a bu docId ile addTab çağrılır (filePath asla renderer'a geçilmez)
+    const tab2Id = useAppStore.getState().addTab(
+      entryLower.title,
+      '<p>Yeni İçerik</p>',
+      entryLower.docId,
+      'docx'
+    );
+
+    // İkinci bir sekme açılmamış olmalı, tek sekme kalmalı ve ilk sekme aktif olmalıdır
+    assert.equal(useAppStore.getState().tabs.length, 1);
+    assert.equal(tab2Id, tab1Id);
+    assert.equal(useAppStore.getState().activeTabId, tab1Id);
+  });
+
   it('7. isValidSender Güvenlik Doğrulamaları: null/undefined frame, yetkisiz file:// ve dev URL kuralları', () => {
     // 7a. senderFrame null veya undefined ise reddetmeli
     assert.equal(isValidSender(null as any), false);

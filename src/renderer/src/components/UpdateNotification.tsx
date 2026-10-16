@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle2, X, ArrowUpCircle } from 'lucide-react';
 import { UpdateStatusData } from '../../../shared/types';
+import { useAppStore } from '../store/useAppStore';
 
 export const UpdateNotification: React.FC = () => {
   const [updateData, setUpdateData] = useState<UpdateStatusData | null>(null);
@@ -35,7 +36,12 @@ export const UpdateNotification: React.FC = () => {
   const handleInstallNow = async () => {
     if (!window.kalem?.updater) return;
     setIsInstalling(true);
-    await window.kalem.updater.install();
+    const tabs = useAppStore.getState().tabs;
+    const hasDirtyTabs = tabs.some((t) => t.isDirty);
+    const result = await window.kalem.updater.install({ hasDirtyTabs });
+    if (result && !result.success) {
+      setIsInstalling(false);
+    }
   };
 
   return (

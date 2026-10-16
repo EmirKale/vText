@@ -17,6 +17,7 @@ export const kalemApi = {
     setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark),
     close: (force?: boolean): Promise<boolean> => ipcRenderer.invoke('window:close', force),
     cancelClose: (): Promise<boolean> => ipcRenderer.invoke('window:cancelClose'),
+    promptingClose: (): Promise<boolean> => ipcRenderer.invoke('window:promptingClose'),
     onRequestClose: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('app:request-close-window', listener);
@@ -164,7 +165,8 @@ export const kalemApi = {
   updater: {
     check: (): Promise<{ success: boolean; isDevelopment?: boolean; message?: string; updateInfo?: any; error?: string }> =>
       ipcRenderer.invoke('updater:check'),
-    install: (): Promise<void> => ipcRenderer.invoke('updater:install'),
+    install: (options?: { hasDirtyTabs?: boolean; force?: boolean }): Promise<any> =>
+      ipcRenderer.invoke('updater:install', options),
     getVersion: (): Promise<string> => ipcRenderer.invoke('updater:get-version'),
     onStatus: (callback: (data: UpdateStatusData) => void) => {
       const listener = (_: any, data: UpdateStatusData) => callback(data);

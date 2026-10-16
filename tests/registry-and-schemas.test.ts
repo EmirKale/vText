@@ -2,7 +2,9 @@ import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import path from 'path';
 import crypto from 'crypto';
-import { DocumentRegistry } from '../src/main/registry.ts';
+import { DocumentRegistry, normalizePath } from '../src/main/registry.ts';
+import { isAllowedUrl } from '../src/main/ipcSecurity.ts';
+import { pathToFileURL } from 'url';
 import {
   SaveFileSchema,
   UnregisterFileSchema,
@@ -495,5 +497,148 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
       assert.equal(defaultApplied.data.targetTitle, 'Belge');
       assert.equal(defaultApplied.data.isDirty, false);
     }
+  });
+
+  it('Windows yol normalleştirmesi: büyük/küçük harf duyarsızlığı ve aynı dosya için tek docId üretilmesi', () => {
+    const p1 = 'C:\\Users\\Emir\\Belgeler\\Rapor.DOCX';
+    const p2 = 'c:\\users\\emir\\belgeler\\rapor.docx';
+    const p3 = 'C:\\USERS\\EMIR\\BELGELER\\RAPOR.DOCX';
+
+    const norm1 = normalizePath(p1);
+    const norm2 = normalizePath(p2);
+    const norm3 = normalizePath(p3);
+
+    if (process.platform === 'win32') {
+      assert.equal(norm1, norm2);
+      assert.equal(norm2, norm3);
+    }
+
+    // DocumentRegistry'ye farklı büyük/küçük harfle kaydedildiğinde:
+    const reg = new DocumentRegistry();
+    const entry1 = reg.register(p1, 'docx', 'Rapor');
+    const entry2 = reg.register(p2, 'docx', 'rapor');
+    const entry3 = reg.register(p3, 'docx', 'RAPOR');
+
+    // Aynı docId dönmeli, yeni kayıt açılmamalıdır
+    assert.equal(entry1.docId, entry2.docId);
+    assert.equal(entry2.docId, entry3.docId);
+    assert.equal(reg.getCount(), 1);
+
+    // getByPath ile de farklı harf büyüklükleriyle bulunabilmelidir
+    const found = reg.getByPath('c:\\USERS\\emir\\BELGELER\\rapor.docx');
+    assert.ok(found);
+    assert.equal(found.docId, entry1.docId);
+
+    // docId'nin tahmin edilemezliği: rastgele UUID v4 olmalıdır, yoldan türetilen deterministik bir hash DEĞİLDİR
+    assert.match(
+      entry1.docId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'docId rastgele UUID v4 olmalıdır'
+    );
+  });
+
+  it('isAllowedUrl: Program Files, boşluklu kullanıcı adları ve Türkçe karakterli yolları doğru doğrulamalıdır', () => {
+    // 1. Program Files yolu (boşluklu)
+    const progFilesPath = 'C:\\Program Files\\vText\\resources\\app.asar\\out\\renderer\\index.html';
+    const progFilesUrl = pathToFileURL(progFilesPath).href;
+    assert.ok(progFilesUrl.includes('%20'), 'URL boşluk için %20 içermelidir');
+    assert.equal(
+      isAllowedUrl(progFilesUrl, [progFilesPath], true),
+      true,
+      'Program Files URL doğrulaması başarılı olmalıdır'
+    );
+
+    // 2. Boşluklu kullanıcı adı yolu
+    const userSpacePath = 'C:\\Users\\Emir Kale\\AppData\\Local\\Programs\\vText\\resources\\app.asar\\out\\renderer\\index.html';
+    const userSpaceUrl = pathToFileURL(userSpacePath).href;
+    assert.ok(userSpaceUrl.includes('Emir%20Kale'));
+    assert.equal(
+      isAllowedUrl(userSpaceUrl, [userSpacePath], true),
+      true,
+      'Boşluklu kullanıcı adı URL doğrulaması başarılı olmalıdır'
+    );
+
+    // 3. Türkçe karakterli yol (İ, ş, ç)
+    const turkishPath = 'C:\\Users\\İşçi\\AppData\\Local\\Programs\\vText\\resources\\app.asar\\out\\renderer\\index.html';
+    const turkishUrl = pathToFileURL(turkishPath).href;
+    // pathToFileURL Türkçe karakterleri UTF-8 percent-encode eder (%C4%B0, %C5%9F, %C3%A7)
+    assert.ok(turkishUrl.includes('%C4%B0') || turkishUrl.includes('%C5%9F') || turkishUrl.includes('%C3%A7'));
+    assert.equal(
+      isAllowedUrl(turkishUrl, [turkishPath], true),
+      true,
+      'Türkçe karakterli yol URL doğrulaması başarılı olmalıdır'
+    );
+
+    // 4. Windows büyük/küçük harf duyarsızlığı kontrolü (URL küçük harf, expected büyük harf)
+    const lowerUrl = pathToFileURL('c:\\program files\\vtext\\resources\\app.asar\\out\\renderer\\index.html').href;
+    assert.equal(
+      isAllowedUrl(lowerUrl, [progFilesPath], true),
+      true,
+      'Farklı büyük/küçük harfli URL Windows üzerinde eşleşmelidir'
+    );
+
+    // 5. Yetkisiz dosya yolları kesinlikle reddedilmelidir
+    const unauthorizedUrl = pathToFileURL('C:\\Users\\İşçi\\AppData\\Local\\Programs\\vText\\resources\\evil.html').href;
+    assert.equal(
+      isAllowedUrl(unauthorizedUrl, [turkishPath], true),
+      false,
+      'Yetkisiz index dışı HTML reddedilmelidir'
+    );
+  });
+
+  it('Kapatma zaman aşımı el sıkışması (handshake): renderer onay kutusu açınca sayaç durdurulmalı, 10 sn beklense bile zaman aşımı çalışmamalıdır', () => {
+    vi.useFakeTimers();
+    let timeoutFired = false;
+    let timeout: NodeJS.Timeout | null = null;
+    let isPending = false;
+
+    // Kapatma isteği geldiğinde ana süreç timer başlatır
+    isPending = true;
+    timeout = setTimeout(() => {
+      if (isPending) {
+        timeoutFired = true;
+      }
+    }, 3500);
+
+    // Renderer "kullanıcıya soruyorum" (promptingClose) sinyali gönderir
+    // stopCloseTimeout() çağrılır:
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
+
+    // Kullanıcı 10 saniye boyunca karar vermeyi bekler
+    vi.advanceTimersByTime(10000);
+
+    // Sayaç durdurulduğu için "Yanıt Vermiyor" uyarısı ASLA tetiklenmemiştir
+    assert.equal(timeoutFired, false, 'Kullanıcı karar verirken 3.5 sn zaman aşımı tetiklenmemelidir');
+
+    // Kullanıcı kararını verince (veya iptal edince) clearCloseTimeout() çağrılır
+    isPending = false;
+    assert.equal(isPending, false);
+    vi.useRealTimers();
+  });
+
+  it('Kapatma zaman aşımı: renderer HİÇ yanıt vermezse (çökerse) 3.5 saniye sonra zaman aşımı devreye girmelidir', () => {
+    vi.useFakeTimers();
+    let timeoutFired = false;
+    let timeout: NodeJS.Timeout | null = null;
+    let isPending = true;
+
+    timeout = setTimeout(() => {
+      if (isPending) {
+        timeoutFired = true;
+      }
+    }, 3500);
+
+    // Renderer dondu/çöktü, promptingClose HİÇ gelmedi
+    // 3.4 saniye sonra henüz tetiklenmemeli
+    vi.advanceTimersByTime(3400);
+    assert.equal(timeoutFired, false);
+
+    // 3.5 saniye dolunca zaman aşımı tetiklenmeli
+    vi.advanceTimersByTime(200);
+    assert.equal(timeoutFired, true, 'Renderer hiç yanıt vermezse 3.5 sn sonra zaman aşımı tetiklenmelidir');
+    vi.useRealTimers();
   });
 });

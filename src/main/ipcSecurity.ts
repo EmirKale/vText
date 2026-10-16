@@ -1,38 +1,56 @@
 import { app, ipcMain } from 'electron';
 import path from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+
+/**
+ * URL doğrulaması için saf yardımcı fonksiyon.
+ * - senderUrl boş veya geçersizse reddeder.
+ * - Vite dev URL'sine yalnızca paketlenmemiş geliştirme ortamında (!isPackaged) izin verir.
+ * - Paketlenmiş sürümde rastgele file:// URL'lerini engeller, yalnızca uygulamanın index.html dosyasını kabul eder.
+ * - fileURLToPath kullanarak boşlukları (%20), Türkçe karakterleri (%C4%B0, %C5%9F vb.) ve dosya yollarını
+ *   Windows'un büyük/küçük harf duyarsızlığına göre normalleştirir.
+ */
+export function isAllowedUrl(
+  senderUrl: string | undefined | null,
+  expectedFilePaths: string[] = [
+    path.resolve(__dirname, '../renderer/index.html'),
+    path.resolve(__dirname, '../../src/renderer/index.html')
+  ],
+  isPackaged: boolean = typeof app?.isPackaged === 'boolean' ? app.isPackaged : false,
+  devUrl: string | undefined = process.env.ELECTRON_RENDERER_URL
+): boolean {
+  if (!senderUrl || typeof senderUrl !== 'string') return false;
+
+  // 1. Vite dev URL'sine yalnızca paketlenmemiş ortamda izin ver
+  if (!isPackaged && devUrl) {
+    return senderUrl.startsWith(devUrl);
+  }
+
+  // 2. Paketlenmiş sürümde yalnızca uygulamanın index.html dosyasının tam yolunu kabul et
+  try {
+    const rawUrl = senderUrl.split('#')[0].split('?')[0];
+    if (!rawUrl.startsWith('file://')) return false;
+
+    // fileURLToPath percent-encoded karakterleri (%20, %C4%B0, %C5%9F vb.) UTF-8 metne çözer
+    const senderPath = fileURLToPath(rawUrl);
+    const normSenderPath = path.resolve(senderPath).toLowerCase();
+
+    return expectedFilePaths.some((expected) => {
+      const normExpected = path.resolve(expected).toLowerCase();
+      return normSenderPath === normExpected;
+    });
+  } catch {
+    return false;
+  }
+}
 
 /**
  * IPC kanalları için yetkili çağırıcı doğrulayıcısı.
  * - senderFrame null veya undefined ise reddeder.
- * - Vite dev URL'sine yalnızca paketlenmemiş geliştirme ortamında (!app.isPackaged) izin verir.
- * - Paketlenmiş sürümde rastgele file:// URL'lerini engeller, yalnızca uygulamanın kendi index.html dosyasını kabul eder.
  */
 export function isValidSender(event: Electron.IpcMainInvokeEvent): boolean {
   if (!event || !event.senderFrame) return false;
-  const senderUrl = event.senderFrame.url;
-  if (!senderUrl || typeof senderUrl !== 'string') return false;
-
-  // 1. Vite dev URL'sine yalnızca !app.isPackaged iken izin ver
-  const isPackaged = typeof app?.isPackaged === 'boolean' ? app.isPackaged : false;
-  if (!isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    return senderUrl.startsWith(process.env.ELECTRON_RENDERER_URL);
-  }
-
-  // 2. Paketlenmiş sürümde yalnızca uygulamanın kendi index.html dosyasının tam yolunu kabul et; rastgele file:// değil
-  try {
-    // __dirname main/ altında çalışır, renderer/index.html dosyasını çözümler
-    // Test veya derleme ortamında src/renderer veya out/renderer olabilir
-    const outRendererPath = path.resolve(__dirname, '../renderer/index.html');
-    const srcRendererPath = path.resolve(__dirname, '../../src/renderer/index.html');
-    const expectedFileUrlOut = pathToFileURL(outRendererPath).href.toLowerCase();
-    const expectedFileUrlSrc = pathToFileURL(srcRendererPath).href.toLowerCase();
-
-    const normSender = senderUrl.toLowerCase().split('#')[0].split('?')[0];
-    return normSender === expectedFileUrlOut || normSender === expectedFileUrlSrc;
-  } catch {
-    return false;
-  }
+  return isAllowedUrl(event.senderFrame.url);
 }
 
 /**

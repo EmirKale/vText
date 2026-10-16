@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import path from 'path';
+import fs from 'fs';
 import { DocumentFormat } from '../shared/types';
 
 export interface DocumentEntry {
@@ -9,6 +10,27 @@ export interface DocumentEntry {
   title: string;
   registeredAt: number;
   lastSavedAt?: number;
+}
+
+/**
+ * Dosya yolunu canonical biçime normalleştirir:
+ * 1. path.resolve ile mutlak yola dönüştürür.
+ * 2. fs.realpathSync.native ile Windows 8.3 kısa adlarını (örn. PROGRA~1) ve symlink'leri çözer.
+ * 3. Windows dosya sistemi büyük/küçük harfe duyarsız olduğundan küçük harfe dönüştürür.
+ */
+export function normalizePath(filePath: string): string {
+  if (!filePath || typeof filePath !== 'string') return '';
+  let resolved = path.resolve(filePath);
+
+  try {
+    if (fs.existsSync(resolved)) {
+      resolved = fs.realpathSync.native(resolved);
+    }
+  } catch {
+    // Henüz diskte var olmayan yeni dosyalar için resolved yol korunur
+  }
+
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 export class DocumentRegistry {
@@ -27,16 +49,18 @@ export class DocumentRegistry {
       throw new Error('Dosya yolu geçerli bir metin olmalıdır.');
     }
     const resolvedPath = path.resolve(filePath);
+    const canonicalKey = normalizePath(resolvedPath);
 
-    // If already registered under this path, update and return existing entry
+    // Eğer bu canonical yol altında zaten bir kayıt varsa, onu güncelle ve döndür
     for (const entry of this.entries.values()) {
-      if (entry.filePath === resolvedPath) {
+      if (normalizePath(entry.filePath) === canonicalKey) {
         entry.format = format;
         if (title) entry.title = title;
         return entry;
       }
     }
 
+    // Yeni rastgele, tahmin edilemez UUID v4 oluşturulur
     const docId = crypto.randomUUID();
     const entry: DocumentEntry = {
       docId,
@@ -56,9 +80,9 @@ export class DocumentRegistry {
 
   public getByPath(filePath: string): DocumentEntry | undefined {
     if (!filePath || typeof filePath !== 'string') return undefined;
-    const resolved = path.resolve(filePath);
+    const canonicalKey = normalizePath(filePath);
     for (const entry of this.entries.values()) {
-      if (entry.filePath === resolved) return entry;
+      if (normalizePath(entry.filePath) === canonicalKey) return entry;
     }
     return undefined;
   }
@@ -90,4 +114,3 @@ export class DocumentRegistry {
 }
 
 export const documentRegistry = DocumentRegistry.getInstance();
-

@@ -17,11 +17,15 @@ export function setAppQuitting(val: boolean = true): void {
   isAppQuitting = val;
 }
 
-export function clearCloseTimeout(): void {
+export function stopCloseTimeout(): void {
   if (closeTimeout) {
     clearTimeout(closeTimeout);
     closeTimeout = null;
   }
+}
+
+export function clearCloseTimeout(): void {
+  stopCloseTimeout();
   isClosePending = false;
 }
 
@@ -222,9 +226,22 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => {
+app.on('session-end', () => {
+  // Windows oturumu kapatılıyor veya yeniden başlatılıyor.
+  // İşletim sisteminin kapatma sürecini kilitlememesi için onayı atla.
   isAppQuitting = true;
   clearCloseTimeout();
+});
+
+app.on('before-quit', (e) => {
+  // Kullanıcı eylemi veya koddan tetiklenen app.quit() çağrılarında onayı atlamamak için:
+  // Eğer henüz onaylı kapatma tamamlanmadıysa, çıkışı engelle ve pencereyi onaylı kapatmaya yönlendir.
+  if (!isAppQuitting) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      e.preventDefault();
+      mainWindow.close();
+    }
+  }
 });
 
 app.on('window-all-closed', () => {

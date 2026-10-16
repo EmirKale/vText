@@ -325,6 +325,9 @@ export const App: React.FC = () => {
         return true;
       }
 
+      // Renderer yanıt verdi, kullanıcıya sorma sürecine geçti: 3.5 saniye zaman aşımı sayacını derhal durdur
+      await window.kalem?.window?.promptingClose?.();
+
       for (const dirtyTab of dirtyTabs) {
         const closed = await closeTabWithConfirmation(dirtyTab.id);
         if (!closed) {
