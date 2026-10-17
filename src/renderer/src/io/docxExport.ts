@@ -23,16 +23,26 @@ export async function exportTipTapJsonToDocx(
 ): Promise<Uint8Array> {
   const children: any[] = [];
 
-  function processMarks(text: string, marks?: any[]): TextRun {
-    let bold = false;
+  const DEFAULT_FONT_FALLBACK = 'Inter, Segoe UI, Arial, sans-serif';
+
+  function processMarks(text: string, marks?: any[], headingLevel?: number): TextRun {
+    let bold = headingLevel ? true : false;
     let italics = false;
     let underline = false;
     let strike = false;
     let subScript = false;
     let superScript = false;
-    let font = 'Inter';
-    let size = 24; // 12pt (docx uses half-points)
-    let color: string | undefined;
+    let font = DEFAULT_FONT_FALLBACK;
+    // Heading default sizes in half-points:
+    // H1: 48 (24pt), H2: 36 (18pt), H3: 30 (15pt), H4: 24 (12pt), H5: 22 (11pt), H6: 20 (10pt), Normal: 24 (12pt)
+    let size = headingLevel === 1 ? 48
+      : headingLevel === 2 ? 36
+      : headingLevel === 3 ? 30
+      : headingLevel === 4 ? 24
+      : headingLevel === 5 ? 22
+      : headingLevel === 6 ? 20
+      : 24;
+    let color: string | undefined = headingLevel ? '111827' : undefined;
     let shading: any;
 
     if (marks) {
@@ -43,9 +53,9 @@ export async function exportTipTapJsonToDocx(
         if (m.type === 'strike') strike = true;
         if (m.type === 'subscript') subScript = true;
         if (m.type === 'superscript') superScript = true;
-        if (m.type === 'code') font = 'Consolas';
+        if (m.type === 'code') font = 'Consolas, Courier New, monospace';
         if (m.type === 'textStyle') {
-          if (m.attrs?.fontFamily) font = String(m.attrs.fontFamily).split(',')[0].replace(/['"]/g, '').trim();
+          if (m.attrs?.fontFamily) font = `${String(m.attrs.fontFamily).split(',')[0].replace(/['"]/g, '').trim()}, ${DEFAULT_FONT_FALLBACK}`;
           if (m.attrs?.fontSize) {
             const n = parseFloat(m.attrs.fontSize);
             if (!isNaN(n)) size = Math.round(String(m.attrs.fontSize).includes('px') ? n * 0.75 * 2 : n * 2);
@@ -93,23 +103,34 @@ export async function exportTipTapJsonToDocx(
         return new Paragraph({ children: [new PageBreak()] });
 
       case 'heading': {
-        const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks));
+        const levelNum = node.attrs?.level || 1;
+        const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks, levelNum));
         let level: any = HeadingLevel.HEADING_1;
-        if (node.attrs?.level === 2) level = HeadingLevel.HEADING_2;
-        if (node.attrs?.level === 3) level = HeadingLevel.HEADING_3;
+        if (levelNum === 2) level = HeadingLevel.HEADING_2;
+        else if (levelNum === 3) level = HeadingLevel.HEADING_3;
+        else if (levelNum === 4) level = HeadingLevel.HEADING_4;
+        else if (levelNum === 5) level = HeadingLevel.HEADING_5;
+        else if (levelNum === 6) level = HeadingLevel.HEADING_6;
         const indentLeft = node.attrs?.indent ? Math.round(node.attrs.indent * 360) : undefined;
 
         return new Paragraph({
-          children: runs,
+          children: runs.length > 0 ? runs : [new TextRun('')],
           heading: level,
           alignment: getAlignment(node.attrs?.textAlign),
           indent: indentLeft ? { left: indentLeft } : undefined,
-          spacing: { before: 240, after: 120, line: lineOf(node.attrs?.lineHeight) }
+          spacing: {
+            before: levelNum === 1 ? 280 : levelNum === 2 ? 240 : 200,
+            after: levelNum === 1 ? 140 : levelNum === 2 ? 120 : 100,
+            line: lineOf(node.attrs?.lineHeight, 280)
+          }
         });
       }
 
       case 'paragraph': {
-        const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks));
+        const content = node.content || [];
+        const runs = content.length > 0
+          ? content.map((c: any) => processMarks(c.text, c.marks))
+          : [new TextRun('')];
         const indentLeft = node.attrs?.indent ? Math.round(node.attrs.indent * 360) : undefined;
         return new Paragraph({
           children: runs,
@@ -287,6 +308,131 @@ export async function exportTipTapJsonToDocx(
 
   const doc = new Document({
     title: documentTitle,
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: DEFAULT_FONT_FALLBACK,
+            size: 24, // 12pt
+            color: '1C2523'
+          }
+        }
+      },
+      paragraphStyles: [
+        {
+          id: 'Title',
+          name: 'Title',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 56, // 28pt
+            bold: true,
+            color: '111827',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 320, after: 160 }
+          }
+        },
+        {
+          id: 'Heading1',
+          name: 'Heading 1',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 48, // 24pt
+            bold: true,
+            color: '111827',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 280, after: 140 }
+          }
+        },
+        {
+          id: 'Heading2',
+          name: 'Heading 2',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 36, // 18pt
+            bold: true,
+            color: '1F2937',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 240, after: 120 }
+          }
+        },
+        {
+          id: 'Heading3',
+          name: 'Heading 3',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 30, // 15pt
+            bold: true,
+            color: '374151',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 200, after: 100 }
+          }
+        },
+        {
+          id: 'Heading4',
+          name: 'Heading 4',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 24, // 12pt
+            bold: true,
+            color: '374151',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 160, after: 80 }
+          }
+        },
+        {
+          id: 'Heading5',
+          name: 'Heading 5',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 22, // 11pt
+            bold: true,
+            color: '4B5563',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 120, after: 60 }
+          }
+        },
+        {
+          id: 'Heading6',
+          name: 'Heading 6',
+          basedOn: 'Normal',
+          next: 'Normal',
+          quickFormat: true,
+          run: {
+            size: 20, // 10pt
+            bold: true,
+            color: '4B5563',
+            font: DEFAULT_FONT_FALLBACK
+          },
+          paragraph: {
+            spacing: { before: 100, after: 50 }
+          }
+        }
+      ]
+    },
     sections: [
       {
         properties: {

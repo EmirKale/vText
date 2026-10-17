@@ -16,6 +16,7 @@ import { FindReplaceBar } from './components/FindReplaceBar';
 import { NavigatorPanel } from './components/NavigatorPanel';
 import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
+import { tipTapJsonToPlainText } from './io/plainText';
 import { applyTheme } from './lib/theme';
 
 export const App: React.FC = () => {
@@ -253,7 +254,8 @@ export const App: React.FC = () => {
         const mdText = tipTapJsonToMarkdown(json);
         saveRes = await window.kalem.files.save(docId, mdText);
       } else if (format === 'txt') {
-        const text = editorInstance.getText();
+        const json = editorInstance.getJSON();
+        const text = tipTapJsonToPlainText(json);
         saveRes = await window.kalem.files.save(docId, text);
       } else {
         const html = editorInstance.getHTML();

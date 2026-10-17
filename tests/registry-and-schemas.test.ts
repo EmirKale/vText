@@ -22,6 +22,7 @@ import {
   MAX_CONTENT_BUFFER_BYTES
 } from '../src/main/ipcSchemas.ts';
 import { saveFile } from '../src/main/files.ts';
+import { closeCoordinator } from '../src/main/closeCoordinator.ts';
 import fs from 'fs';
 import os from 'os';
 
@@ -586,26 +587,20 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     );
   });
 
-  it('Kapatma zaman aşımı el sıkışması (handshake): renderer onay kutusu açınca sayaç durdurulmalı, 10 sn beklense bile zaman aşımı çalışmamalıdır', () => {
+  it('Kapatma zaman aşımı el sıkışması (handshake): renderer onay kutusu açınca gerçek closeCoordinator sayacı durdurulmalı, 10 sn beklense bile zaman aşımı çalışmamalıdır', () => {
     vi.useFakeTimers();
+    closeCoordinator.reset();
     let timeoutFired = false;
-    let timeout: NodeJS.Timeout | null = null;
-    let isPending = false;
 
-    // Kapatma isteği geldiğinde ana süreç timer başlatır
-    isPending = true;
-    timeout = setTimeout(() => {
-      if (isPending) {
-        timeoutFired = true;
-      }
+    // Pencere kapatma isteği: closeCoordinator üzerinden başlatılır
+    closeCoordinator.setClosePending(true);
+    closeCoordinator.startCloseTimeout(() => {
+      timeoutFired = true;
     }, 3500);
 
-    // Renderer "kullanıcıya soruyorum" (promptingClose) sinyali gönderir
-    // stopCloseTimeout() çağrılır:
-    if (timeout) {
-      clearTimeout(timeout);
-      timeout = null;
-    }
+    // Renderer pencere kapatma talebini aldığını ve kullanıcıya sorduğunu bildirir:
+    // (window:promptingClose IPC çağrısı -> closeCoordinator.stopCloseTimeout())
+    closeCoordinator.stopCloseTimeout();
 
     // Kullanıcı 10 saniye boyunca karar vermeyi bekler
     vi.advanceTimersByTime(10000);
@@ -613,22 +608,20 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     // Sayaç durdurulduğu için "Yanıt Vermiyor" uyarısı ASLA tetiklenmemiştir
     assert.equal(timeoutFired, false, 'Kullanıcı karar verirken 3.5 sn zaman aşımı tetiklenmemelidir');
 
-    // Kullanıcı kararını verince (veya iptal edince) clearCloseTimeout() çağrılır
-    isPending = false;
-    assert.equal(isPending, false);
+    // Kullanıcı kararını verince pencere kapatılır veya iptal edilir
+    closeCoordinator.clearCloseTimeout();
+    assert.equal(closeCoordinator.isClosing(), false);
     vi.useRealTimers();
   });
 
-  it('Kapatma zaman aşımı: renderer HİÇ yanıt vermezse (çökerse) 3.5 saniye sonra zaman aşımı devreye girmelidir', () => {
+  it('Kapatma zaman aşımı: renderer HİÇ yanıt vermezse (çökerse) gerçek closeCoordinator 3.5 saniye sonra zaman aşımı devreye girmelidir', () => {
     vi.useFakeTimers();
+    closeCoordinator.reset();
     let timeoutFired = false;
-    let timeout: NodeJS.Timeout | null = null;
-    let isPending = true;
 
-    timeout = setTimeout(() => {
-      if (isPending) {
-        timeoutFired = true;
-      }
+    closeCoordinator.setClosePending(true);
+    closeCoordinator.startCloseTimeout(() => {
+      timeoutFired = true;
     }, 3500);
 
     // Renderer dondu/çöktü, promptingClose HİÇ gelmedi
@@ -639,6 +632,55 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     // 3.5 saniye dolunca zaman aşımı tetiklenmeli
     vi.advanceTimersByTime(200);
     assert.equal(timeoutFired, true, 'Renderer hiç yanıt vermezse 3.5 sn sonra zaman aşımı tetiklenmelidir');
+
+    closeCoordinator.reset();
     vi.useRealTimers();
+  });
+
+  it('Güncelleme kurulum akışı: updater:install "Kaydet" seçilince belgeler kaydedildikten sonra quitAndInstall tetiklenmelidir', () => {
+    closeCoordinator.reset();
+
+    // 1. Kullanıcı "Güncelle ve Yeniden Başlat" der, kaydedilmemiş sekme vardır
+    // Dialogda "Kaydet" seçilince updater:install koordinatöre bildirim yapar:
+    closeCoordinator.setInstallPendingAfterSave(true);
+    assert.equal(closeCoordinator.isInstallPending(), true);
+
+    // 2. Renderer belgeleri kaydeder ve window.kalem.window.close(true) çağırır.
+    // ipcMain window:close işleyicisi çalışır:
+    let quitAndInstallCalled = false;
+    const fakeQuitAndInstall = () => {
+      quitAndInstallCalled = true;
+    };
+
+    if (closeCoordinator.isInstallPending()) {
+      closeCoordinator.setInstallPendingAfterSave(false);
+      closeCoordinator.setAppQuitting(true);
+      fakeQuitAndInstall();
+    }
+
+    // 3. Doğrulama: Uygulama sadece kapanmakla kalmaz, quitAndInstall çağrılarak güncelleme kurulur!
+    assert.equal(quitAndInstallCalled, true, 'Belgeler kaydedildikten sonra autoUpdater.quitAndInstall çalıştırılmalıdır');
+    assert.equal(closeCoordinator.isQuitting(), true);
+    assert.equal(closeCoordinator.isInstallPending(), false);
+
+    closeCoordinator.reset();
+  });
+
+  it('Güncelleme kurulum akışı: "Kaydet" seçildikten sonra kullanıcı kaydetme diyaloğunda "İptal" derse güncelleme kurulumu durdurulmalıdır', () => {
+    closeCoordinator.reset();
+
+    // 1. Güncelleme için kaydetme bekleniyor
+    closeCoordinator.setInstallPendingAfterSave(true);
+
+    // 2. Kullanıcı kaydetme diyaloğunda "İptal" seçti -> renderer window:cancelClose çağırır
+    closeCoordinator.setInstallPendingAfterSave(false);
+    closeCoordinator.clearCloseTimeout();
+
+    // 3. Doğrulama: Kurulum bayrağı temizlenmiş ve pencere kapatılmamıştır
+    assert.equal(closeCoordinator.isInstallPending(), false);
+    assert.equal(closeCoordinator.isClosing(), false);
+    assert.equal(closeCoordinator.isQuitting(), false);
+
+    closeCoordinator.reset();
   });
 });

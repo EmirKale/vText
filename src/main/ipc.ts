@@ -63,6 +63,8 @@ import {
   ConfirmOverwriteSchema
 } from './ipcSchemas';
 import { isValidSender, registerSecureHandler } from './ipcSecurity';
+import { closeCoordinator } from './closeCoordinator';
+import { autoUpdater } from './updater';
 
 const store = new Store();
 
@@ -167,8 +169,20 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   registerSecureHandler('window:close', async (_, force: unknown) => {
-    clearCloseTimeout();
+    closeCoordinator.clearCloseTimeout();
     if (force === true) {
+      if (closeCoordinator.isInstallPending()) {
+        closeCoordinator.setInstallPendingAfterSave(false);
+        closeCoordinator.setAppQuitting(true);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          try {
+            store.set('windowBounds', mainWindow.getBounds());
+          } catch {}
+        }
+        autoUpdater.quitAndInstall(false, true);
+        return true;
+      }
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         try {
           store.set('windowBounds', mainWindow.getBounds());
@@ -182,12 +196,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   registerSecureHandler('window:cancelClose', async () => {
-    clearCloseTimeout();
+    closeCoordinator.setInstallPendingAfterSave(false);
+    closeCoordinator.clearCloseTimeout();
     return true;
   });
 
   registerSecureHandler('window:promptingClose', async () => {
-    stopCloseTimeout();
+    closeCoordinator.stopCloseTimeout();
     return true;
   });
 
@@ -350,8 +365,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Proofread Page (Process blocks and return structured JSON)
-  registerSecureHandler('ai:proofread', async (event, requestId: string, blocks: Array<{ id: string; text: string; index: number }>) => {
-    const validated = validateIpc(ProofreadBlocksSchema, blocks);
+  registerSecureHandler('ai:proofread', async (event, requestId: string, rawBlocks: Array<{ id: string; text: string; index: number }>) => {
+    const validated = validateIpc(ProofreadBlocksSchema, rawBlocks);
     if (!validated.success) {
       throw new Error(validated.error);
     }
@@ -362,7 +377,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
     // Process blocks in parallel with limit of 3
     const concurrencyLimit = 3;
-    const queue = [...validated.data];
+    const blocks = validated.data;
+    const queue = [...blocks];
     let processedCount = 0;
 
     async function processBlock(block: { id: string; text: string; index: number }): Promise<void> {
@@ -396,7 +412,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         processedCount++;
         event.sender.send(`ai:proofread-progress:${requestId}`, {
           processed: processedCount,
-          total: validated.data.length
+          total: blocks.length
         });
       }
     }

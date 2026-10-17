@@ -21,7 +21,9 @@ export const kalemApi = {
     onRequestClose: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('app:request-close-window', listener);
-      return () => ipcRenderer.removeListener('app:request-close-window', listener);
+      return () => {
+        ipcRenderer.removeListener('app:request-close-window', listener);
+      };
     }
   },
   dialog: {
@@ -62,7 +64,9 @@ export const kalemApi = {
     onOpenFile: (callback: (result: FileOpenResult) => void) => {
       const listener = (_: any, result: FileOpenResult) => callback(result);
       ipcRenderer.on('app:open-file', listener);
-      return () => ipcRenderer.removeListener('app:open-file', listener);
+      return () => {
+        ipcRenderer.removeListener('app:open-file', listener);
+      };
     }
   },
   ai: {
@@ -171,7 +175,9 @@ export const kalemApi = {
     onStatus: (callback: (data: UpdateStatusData) => void) => {
       const listener = (_: any, data: UpdateStatusData) => callback(data);
       ipcRenderer.on('updater:status', listener);
-      return () => ipcRenderer.removeListener('updater:status', listener);
+      return () => {
+        ipcRenderer.removeListener('updater:status', listener);
+      };
     }
   }
 };

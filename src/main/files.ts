@@ -6,6 +6,52 @@ import mammoth from 'mammoth';
 import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } from '../shared/types';
 import { convertWithPandocOrLibreOffice } from './convert';
 import { documentRegistry } from './registry';
+import MarkdownIt from 'markdown-it';
+
+const md = new MarkdownIt({
+  html: true,
+  breaks: true,
+  linkify: true
+});
+
+export function decodeTextBuffer(buffer: Buffer): string {
+  // Check UTF-8 BOM: EF BB BF
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(buffer.subarray(3));
+  }
+  // Try strict UTF-8
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    // Fallback to Windows-1254 (Turkish ANSI / CP1254)
+    try {
+      return new TextDecoder('windows-1254').decode(buffer);
+    } catch {
+      return new TextDecoder('utf-8').decode(buffer);
+    }
+  }
+}
+
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export function plainTextToHtml(text: string): string {
+  const paragraphs = text.split(/\r?\n\r?\n/);
+  return paragraphs
+    .map((p) => {
+      const trimmed = p.trim();
+      if (!trimmed) return '<p></p>';
+      const lines = p.split(/\r?\n/).map((l) => escapeHtml(l)).join('<br>');
+      return `<p>${lines}</p>`;
+    })
+    .join('');
+}
 
 const SUPPORTED_EXTENSIONS = ['docx', 'md', 'txt', 'html', 'htm', 'odt', 'rtf', 'doc'];
 
@@ -112,23 +158,36 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     const ext = path.extname(filePath).toLowerCase().replace('.', '') as DocumentFormat;
     const title = path.basename(filePath);
 
-    // 1. Markdown, TXT, HTML
+    // 1. Markdown, TXT, HTML (B2: Encoding handling + B3: MD/TXT rendering)
     if (ext === 'md' || ext === 'txt' || ext === 'html') {
-      const content = await fs.promises.readFile(filePath, 'utf8');
+      const rawBuffer = await fs.promises.readFile(filePath);
+      const decodedText = decodeTextBuffer(rawBuffer);
+      let htmlContent: string;
+      if (ext === 'md') {
+        htmlContent = md.render(decodedText);
+      } else if (ext === 'txt') {
+        htmlContent = plainTextToHtml(decodedText);
+      } else {
+        htmlContent = decodedText;
+      }
+
       const entry = documentRegistry.register(filePath, ext, title);
       return {
         success: true,
         docId: entry.docId,
         title: entry.title,
-        content,
+        content: htmlContent,
         format: ext
       };
     }
 
-    // 2. DOCX (mammoth)
+    // 2. DOCX (mammoth with B5: ignoreEmptyParagraphs: false)
     if (ext === 'docx') {
       const buffer = await fs.promises.readFile(filePath);
-      const mammothResult = await mammoth.convertToHtml({ buffer });
+      const mammothResult = await mammoth.convertToHtml(
+        { buffer },
+        { ignoreEmptyParagraphs: false }
+      );
       const entry = documentRegistry.register(filePath, 'docx', title);
       return {
         success: true,
@@ -140,12 +199,15 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       };
     }
 
-    // 3. ODT, RTF, DOC (Pandoc / LibreOffice)
+    // 3. ODT, RTF, DOC (Pandoc / LibreOffice with ignoreEmptyParagraphs: false)
     if (ext === 'odt' || ext === 'rtf' || ext === 'doc') {
       const converted = await convertWithPandocOrLibreOffice(filePath, 'docx');
       if (converted.success && converted.outputPath) {
         const buffer = await fs.promises.readFile(converted.outputPath);
-        const mammothResult = await mammoth.convertToHtml({ buffer });
+        const mammothResult = await mammoth.convertToHtml(
+          { buffer },
+          { ignoreEmptyParagraphs: false }
+        );
         const entry = documentRegistry.register(filePath, ext, title);
         return {
           success: true,
@@ -168,7 +230,6 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     return {
       success: true,
       docId: entry.docId,
-      filePath: entry.filePath,
       title: entry.title,
       content: rawContent,
       format: ext
@@ -308,7 +369,13 @@ export async function saveFile(
 
   try {
     fileHandle = await fs.promises.open(tempPath, 'w');
-    await fileHandle.writeFile(content);
+    if (entry.format === 'txt' && typeof content === 'string') {
+      // B2: .txt için UTF-8 BOM ekle (Windows Not Defteri ve Windows araçları için)
+      const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+      await fileHandle.writeFile(Buffer.concat([bom, Buffer.from(content, 'utf8')]));
+    } else {
+      await fileHandle.writeFile(content);
+    }
     await fileHandle.sync();
     await fileHandle.close();
     fileHandle = null;

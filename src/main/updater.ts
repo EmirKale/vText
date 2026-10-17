@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import pkg from 'electron-updater';
-const { autoUpdater } = pkg;
+export const { autoUpdater } = pkg;
 import Store from 'electron-store';
 import { registerSecureHandler } from './ipcSecurity';
-import { setAppQuitting } from './index';
+import { closeCoordinator } from './closeCoordinator';
+import type { UpdateStatusData } from '../shared/types';
 
 const store = new Store();
 
@@ -113,11 +114,13 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
         });
 
         if (choice === 0) {
-          // Kaydet: pencere kapatma akışına yönlendirerek kaydetme diyaloğunu tetikle
+          // Kaydet: belgeler kaydedildikten sonra quitAndInstall çalışacak şekilde koordinatöre kaydet
+          closeCoordinator.setInstallPendingAfterSave(true);
           mainWindow.webContents.send('app:request-close-window');
           return { success: false, action: 'save' };
         } else if (choice === 2) {
           // İptal: güncellemeyi iptal et
+          closeCoordinator.setInstallPendingAfterSave(false);
           return { success: false, action: 'cancel' };
         }
         // choice === 1: 'Yine de güncelle' seçildi, doğrudan devam et
@@ -125,7 +128,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     }
 
     // Quits app and runs installer
-    setAppQuitting(true);
+    closeCoordinator.setAppQuitting(true);
     autoUpdater.quitAndInstall(false, true);
     return { success: true };
   });

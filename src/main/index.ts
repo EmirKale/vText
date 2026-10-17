@@ -6,27 +6,22 @@ import { initAutoUpdater } from './updater';
 import { registerKalemAssetProtocol, openFileByPath } from './files';
 import { getApiKey } from './keystore';
 
+import { closeCoordinator } from './closeCoordinator';
+
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
 let fileToOpenOnReady: string | null = null;
-let isAppQuitting = false;
-let isClosePending = false;
-let closeTimeout: NodeJS.Timeout | null = null;
 
 export function setAppQuitting(val: boolean = true): void {
-  isAppQuitting = val;
+  closeCoordinator.setAppQuitting(val);
 }
 
 export function stopCloseTimeout(): void {
-  if (closeTimeout) {
-    clearTimeout(closeTimeout);
-    closeTimeout = null;
-  }
+  closeCoordinator.stopCloseTimeout();
 }
 
 export function clearCloseTimeout(): void {
-  stopCloseTimeout();
-  isClosePending = false;
+  closeCoordinator.clearCloseTimeout();
 }
 
 // Parse file argument from command line (Windows Open With / Double-click)
@@ -97,10 +92,16 @@ function createWindow(): void {
     show: false
   });
 
+  // Windows oturumu kapatılıyor veya yeniden başlatılıyor (BrowserWindow olayı - Windows)
+  mainWindow.on('session-end', () => {
+    closeCoordinator.setAppQuitting(true);
+    closeCoordinator.clearCloseTimeout();
+  });
+
   // Save window bounds and intercept close to ask for confirmation if there are unsaved tabs
   mainWindow.on('close', (e) => {
     // 1. Windows oturum kapatma / yeniden başlatma (session-end / before-quit) ve autoUpdater durumlarında onayı atla
-    if (isAppQuitting) {
+    if (closeCoordinator.isQuitting()) {
       return;
     }
 
@@ -109,7 +110,7 @@ function createWindow(): void {
     }
 
     // 2. Aynı anda birden fazla kapatma isteğinde çift onay penceresi çıkmasın
-    if (isClosePending) {
+    if (closeCoordinator.isClosing()) {
       e.preventDefault();
       return;
     }
@@ -119,13 +120,12 @@ function createWindow(): void {
     } catch {}
 
     e.preventDefault();
-    isClosePending = true;
+    closeCoordinator.setClosePending(true);
 
     // 3. Renderer yanıt vermezse (3.5 saniye zaman aşımı) kullanıcıya kapatma seçeneği ver
-    if (closeTimeout) clearTimeout(closeTimeout);
-    closeTimeout = setTimeout(() => {
-      if (isClosePending && mainWindow && !mainWindow.isDestroyed()) {
-        isClosePending = false;
+    closeCoordinator.startCloseTimeout(() => {
+      if (closeCoordinator.isClosing() && mainWindow && !mainWindow.isDestroyed()) {
+        closeCoordinator.clearCloseTimeout();
         const choice = dialog.showMessageBoxSync(mainWindow, {
           type: 'warning',
           buttons: ['Kapat', 'Bekle'],
@@ -153,7 +153,7 @@ function createWindow(): void {
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Main] Renderer unresponsive');
-    if (isClosePending && mainWindow && !mainWindow.isDestroyed()) {
+    if (closeCoordinator.isClosing() && mainWindow && !mainWindow.isDestroyed()) {
       clearCloseTimeout();
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'warning',
@@ -226,17 +226,10 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('session-end', () => {
-  // Windows oturumu kapatılıyor veya yeniden başlatılıyor.
-  // İşletim sisteminin kapatma sürecini kilitlememesi için onayı atla.
-  isAppQuitting = true;
-  clearCloseTimeout();
-});
-
 app.on('before-quit', (e) => {
   // Kullanıcı eylemi veya koddan tetiklenen app.quit() çağrılarında onayı atlamamak için:
   // Eğer henüz onaylı kapatma tamamlanmadıysa, çıkışı engelle ve pencereyi onaylı kapatmaya yönlendir.
-  if (!isAppQuitting) {
+  if (!closeCoordinator.isQuitting()) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       e.preventDefault();
       mainWindow.close();
