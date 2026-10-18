@@ -23,39 +23,34 @@ export async function exportTipTapJsonToDocx(
 ): Promise<Uint8Array> {
   const children: any[] = [];
 
-  const DEFAULT_FONT_FALLBACK = 'Inter, Segoe UI, Arial, sans-serif';
+  const DEFAULT_FONT_FALLBACK = 'Calibri';
 
-  function processMarks(text: string, marks?: any[], headingLevel?: number): TextRun {
-    let bold = headingLevel ? true : false;
-    let italics = false;
-    let underline = false;
-    let strike = false;
-    let subScript = false;
-    let superScript = false;
-    let font = DEFAULT_FONT_FALLBACK;
-    // Heading default sizes in half-points:
-    // H1: 48 (24pt), H2: 36 (18pt), H3: 30 (15pt), H4: 24 (12pt), H5: 22 (11pt), H6: 20 (10pt), Normal: 24 (12pt)
-    let size = headingLevel === 1 ? 48
-      : headingLevel === 2 ? 36
-      : headingLevel === 3 ? 30
-      : headingLevel === 4 ? 24
-      : headingLevel === 5 ? 22
-      : headingLevel === 6 ? 20
-      : 24;
-    let color: string | undefined = headingLevel ? '111827' : undefined;
+  function processMarks(text: string, marks?: any[]): TextRun {
+    let bold: boolean | undefined;
+    let italics: boolean | undefined;
+    let underline: any;
+    let strike: boolean | undefined;
+    let subScript: boolean | undefined;
+    let superScript: boolean | undefined;
+    let font: string | undefined;
+    let size: number | undefined;
+    let color: string | undefined;
     let shading: any;
 
     if (marks) {
       for (const m of marks) {
         if (m.type === 'bold') bold = true;
         if (m.type === 'italic') italics = true;
-        if (m.type === 'underline') underline = true;
+        if (m.type === 'underline') underline = {};
         if (m.type === 'strike') strike = true;
         if (m.type === 'subscript') subScript = true;
         if (m.type === 'superscript') superScript = true;
-        if (m.type === 'code') font = 'Consolas, Courier New, monospace';
+        if (m.type === 'code') font = 'Consolas';
         if (m.type === 'textStyle') {
-          if (m.attrs?.fontFamily) font = `${String(m.attrs.fontFamily).split(',')[0].replace(/['"]/g, '').trim()}, ${DEFAULT_FONT_FALLBACK}`;
+          if (m.attrs?.fontFamily) {
+            const clean = String(m.attrs.fontFamily).split(',')[0].replace(/['"]/g, '').trim();
+            if (clean && clean.toLowerCase() !== 'calibri') font = clean;
+          }
           if (m.attrs?.fontSize) {
             const n = parseFloat(m.attrs.fontSize);
             if (!isNaN(n)) size = Math.round(String(m.attrs.fontSize).includes('px') ? n * 0.75 * 2 : n * 2);
@@ -73,7 +68,7 @@ export async function exportTipTapJsonToDocx(
       text: text || '',
       bold,
       italics,
-      underline: underline ? {} : undefined,
+      underline,
       strike,
       subScript,
       superScript,
@@ -104,7 +99,7 @@ export async function exportTipTapJsonToDocx(
 
       case 'heading': {
         const levelNum = node.attrs?.level || 1;
-        const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks, levelNum));
+        const runs = (node.content || []).map((c: any) => processMarks(c.text, c.marks));
         let level: any = HeadingLevel.HEADING_1;
         if (levelNum === 2) level = HeadingLevel.HEADING_2;
         else if (levelNum === 3) level = HeadingLevel.HEADING_3;
@@ -119,8 +114,8 @@ export async function exportTipTapJsonToDocx(
           alignment: getAlignment(node.attrs?.textAlign),
           indent: indentLeft ? { left: indentLeft } : undefined,
           spacing: {
-            before: levelNum === 1 ? 280 : levelNum === 2 ? 240 : 200,
-            after: levelNum === 1 ? 140 : levelNum === 2 ? 120 : 100,
+            before: levelNum === 1 ? 240 : levelNum === 2 ? 200 : 160,
+            after: 120, // ~6pt boşluk
             line: lineOf(node.attrs?.lineHeight, 280)
           }
         });
@@ -130,13 +125,13 @@ export async function exportTipTapJsonToDocx(
         const content = node.content || [];
         const runs = content.length > 0
           ? content.map((c: any) => processMarks(c.text, c.marks))
-          : [new TextRun('')];
+          : [];
         const indentLeft = node.attrs?.indent ? Math.round(node.attrs.indent * 360) : undefined;
         return new Paragraph({
           children: runs,
           alignment: getAlignment(node.attrs?.textAlign),
           indent: indentLeft ? { left: indentLeft } : undefined,
-          spacing: { after: 160, line: lineOf(node.attrs?.lineHeight, 360) }
+          spacing: { after: 120, line: lineOf(node.attrs?.lineHeight, 276) }
         });
       }
 
@@ -236,15 +231,19 @@ export async function exportTipTapJsonToDocx(
       case 'bulletList':
       case 'orderedList': {
         const listItems: any[] = [];
-        (node.content || []).forEach((item: any, idx: number) => {
-          (item.content || []).forEach((subNode: any) => {
+        const items = node.content || [];
+        items.forEach((item: any, idx: number) => {
+          const isLastItem = idx === items.length - 1;
+          const subNodes = item.content || [];
+          subNodes.forEach((subNode: any, subIdx: number) => {
+            const isLastSub = subIdx === subNodes.length - 1;
             const runs = (subNode.content || []).map((c: any) => processMarks(c.text, c.marks));
             listItems.push(
               new Paragraph({
                 children: runs,
                 bullet: node.type === 'bulletList' ? { level: 0 } : undefined,
                 numbering: node.type === 'orderedList' ? { reference: 'numbered-list', level: 0 } : undefined,
-                spacing: { after: 80 }
+                spacing: { after: isLastItem && isLastSub ? 160 : 80 }
               })
             );
           });
@@ -266,7 +265,7 @@ export async function exportTipTapJsonToDocx(
                 left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
                 right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' }
               },
-              margins: { top: 100, bottom: 100, left: 140, right: 140 }
+              margins: { top: 120, bottom: 160, left: 140, right: 140 }
             });
           });
           return new TableRow({ children: cells });

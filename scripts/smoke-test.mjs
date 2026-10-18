@@ -1,6 +1,7 @@
 import { spawn, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,18 +17,35 @@ if (!fs.existsSync(exePath)) {
   process.exit(1);
 }
 
+// 1. İzole temiz userData klasörü ve geçici işaret dosyası oluştur
+const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vtext-smoke-user-'));
+const markerFile = path.join(os.tmpdir(), `vtext-smoke-out-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+
+if (fs.existsSync(markerFile)) {
+  fs.unlinkSync(markerFile);
+}
+
 let exitedPrematurely = false;
 let exitCode = null;
 
-// Exe'yi yönetici OLMADAN, standart kullanıcı olarak başlat
-const child = spawn(exePath, [], {
-  cwd: path.dirname(exePath),
-  stdio: 'ignore',
-  detached: false
-});
+// 2. Exe'yi izole parametrelerle başlat
+const child = spawn(
+  exePath,
+  [
+    `--user-data-dir=${tmpUserData}`,
+    '--smoke-test',
+    `--smoke-test-out=${markerFile}`
+  ],
+  {
+    cwd: path.dirname(exePath),
+    stdio: 'ignore',
+    detached: false
+  }
+);
 
 child.on('error', (err) => {
   console.error(`[Smoke Test] Exe başlatılamadı:`, err);
+  cleanup();
   process.exit(1);
 });
 
@@ -36,29 +54,74 @@ child.on('exit', (code, signal) => {
   exitCode = code !== null ? code : signal;
 });
 
-console.log(`[Smoke Test] vText.exe başlatıldı (PID: ${child.pid}). 10 saniye gözlemleniyor...`);
+console.log(`[Smoke Test] vText.exe başlatıldı (PID: ${child.pid}). İşaret dosyası bekleniyor (en fazla 15 sn)...`);
 
-const waitSeconds = 10;
-for (let i = 1; i <= waitSeconds; i++) {
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+const maxWaitMs = 15000;
+const pollIntervalMs = 500;
+let elapsed = 0;
+let success = false;
+
+while (elapsed < maxWaitMs) {
+  await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  elapsed += pollIntervalMs;
+
+  if (fs.existsSync(markerFile)) {
+    try {
+      const raw = fs.readFileSync(markerFile, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data && data.success === true && data.settings) {
+        console.log(`[Smoke Test] BAŞARILI! İşaret dosyası ${elapsed}ms içinde yazıldı ve IPC settings:get doğrulandı.`);
+        console.log(`[Smoke Test] Ayar anahtarları:`, Object.keys(data.settings));
+        success = true;
+        break;
+      } else {
+        console.error(`[Smoke Test] BAŞARISIZ! İşaret dosyasında IPC hatası bildirildi:`, data);
+        cleanup();
+        process.exit(1);
+      }
+    } catch (parseErr) {
+      // Dosya henüz yazılıyor olabilir, sonraki döngüde tekrar dene
+    }
+  }
+
   if (exitedPrematurely) {
-    console.error(`[Smoke Test] BAŞARISIZ! Uygulama ${i}. saniyede beklenmedik şekilde kapandı (Çıkış kodu / Sinyal: ${exitCode}).`);
+    console.error(`[Smoke Test] BAŞARISIZ! İşaret dosyası yazılmadan uygulama kapandı (Çıkış kodu / Sinyal: ${exitCode}).`);
+    cleanup();
     process.exit(1);
   }
 }
 
-console.log(`[Smoke Test] Başarılı! Uygulama 10 saniye boyunca çökmeden kararlı şekilde çalıştı.`);
-
-// Uygulama ağacını temizce kapat
-try {
-  if (process.platform === 'win32' && child.pid) {
-    execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
-  } else {
-    child.kill('SIGTERM');
+if (!success) {
+  console.error(`[Smoke Test] BAŞARISIZ! 15 saniye içinde işaret dosyası (${markerFile}) yazılmadı!`);
+  if (!exitedPrematurely) {
+    console.error(`[Smoke Test] Süreç ayakta (PID: ${child.pid}) fakat pencere yüklenemedi veya IPC yanıt vermedi.`);
   }
-} catch {
-  // Process might have already shut down cleanly
+  cleanup();
+  process.exit(1);
 }
 
-console.log(`[Smoke Test] Uygulama sonlandırıldı. Test tamamlandı.`);
+cleanup();
+console.log(`[Smoke Test] Duman testi başarıyla tamamlandı (PASS).`);
 process.exit(0);
+
+function cleanup() {
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
+    } else if (child.pid) {
+      child.kill('SIGTERM');
+    }
+  } catch {}
+
+  try {
+    if (fs.existsSync(markerFile)) {
+      fs.unlinkSync(markerFile);
+    }
+  } catch {}
+
+  try {
+    if (fs.existsSync(tmpUserData)) {
+      fs.rmSync(tmpUserData, { recursive: true, force: true });
+    }
+  } catch {}
+}

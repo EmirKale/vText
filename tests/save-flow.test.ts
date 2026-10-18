@@ -101,12 +101,26 @@ describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
     // 6. Kanıt kontrolü: Dosya "PK" (0x50 0x4B) ile başlamamalı, düz metin Markdown olmalıdır
     const rawBuffer = fs.readFileSync(chosenPath);
     assert.ok(rawBuffer.length > 0);
-    assert.notEqual(rawBuffer[0], 0x50, 'Markdown dosyası ZIP/DOCX sihirli baytı PK ile başlayamaz');
-    assert.notEqual(rawBuffer[1], 0x4b, 'Markdown dosyası ZIP/DOCX sihirli baytı PK ile başlayamaz');
+    const isZip = rawBuffer[0] === 0x50 && rawBuffer[1] === 0x4b;
+    assert.equal(isZip, false, 'Markdown dosyası ZIP/DOCX sihirli baytı PK (0x50 0x4B) ile başlayamaz');
 
     const textContent = fs.readFileSync(chosenPath, 'utf8');
     assert.match(textContent, /# vText Başlık/);
     assert.match(textContent, /Bu bir deneme paragrafıdır\./);
+  });
+
+  it('Paragraf (P ile baslayan) Markdown dosyasi PK sihirli bayti sanilmamalidir', async () => {
+    const pPath = path.join(tmpDir, 'paragraf_test.md');
+    const content = 'Paragraf metni ile baslayan gecerli bir Markdown belgesi.';
+    const entry = registry.register(pPath, 'md', 'paragraf_test.md');
+    const saveRes = await saveFile(entry.docId, content);
+    assert.equal(saveRes.success, true);
+
+    const buf = fs.readFileSync(pPath);
+    assert.equal(buf[0], 0x50, "Ilk bayt P (0x50) olmalidir");
+    assert.notEqual(buf[1], 0x4b, "Ikinci bayt K (0x4B) OLMAMALIDIR");
+    const isZip = buf[0] === 0x50 && buf[1] === 0x4b;
+    assert.equal(isZip, false, "Paragraf metni PK zip basligi degildir");
   });
 
   it('PDF dışa aktarma sonrası sekmenin docId, format ve başlığı aynı kalmalıdır', async () => {

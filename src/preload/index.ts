@@ -184,3 +184,4 @@ export const kalemApi = {
 
 contextBridge.exposeInMainWorld('kalem', kalemApi);
 contextBridge.exposeInMainWorld('vtext', kalemApi);
+contextBridge.exposeInMainWorld('api', kalemApi);

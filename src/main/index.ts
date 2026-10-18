@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import Store from 'electron-store';
 import { registerIpcHandlers } from './ipc';
 import { initAutoUpdater } from './updater';
@@ -137,6 +138,8 @@ function createWindow(): void {
         });
         if (choice === 0) {
           mainWindow.destroy();
+        } else {
+          closeCoordinator.setClosePending(false);
         }
       }
     }, 3500);
@@ -162,10 +165,12 @@ function createWindow(): void {
         cancelId: 1,
         noLink: true,
         title: 'vText Yanıt Vermiyor',
-        message: 'Uygulama yanıt vermiyor. Yine de kapatmak istiyor musunuz?'
+        message: 'Uygulama yanıt vermiyor. Zorla kapatmak istiyor musunuz?'
       });
       if (choice === 0) {
         mainWindow.destroy();
+      } else {
+        closeCoordinator.setClosePending(false);
       }
     }
   });
@@ -203,6 +208,52 @@ function createWindow(): void {
   // Register all IPC handlers
   registerIpcHandlers(mainWindow);
   initAutoUpdater(mainWindow);
+
+  // Smoke test verification flag: verifies contextBridge, preload and IPC roundtrip
+  const isSmokeTest = process.argv.includes('--smoke-test');
+  const smokeOutArg = process.argv.find((arg) => arg.startsWith('--smoke-test-out='));
+  const smokeTestOutPath = smokeOutArg ? smokeOutArg.slice('--smoke-test-out='.length) : null;
+
+  if (isSmokeTest && smokeTestOutPath) {
+    mainWindow.webContents.on('did-finish-load', async () => {
+      try {
+        console.log('[SmokeTest] did-finish-load triggered, verifying IPC via window.api.settings.get()...');
+        const settings = await mainWindow!.webContents.executeJavaScript(`
+          new Promise((resolve, reject) => {
+            const api = window.api || window.kalem || window.vtext;
+            if (!api || !api.settings || typeof api.settings.get !== 'function') {
+              reject(new Error('IPC api.settings.get is not exposed or contextBridge failed'));
+              return;
+            }
+            api.settings.get().then(resolve).catch(reject);
+          })
+        `);
+        const payload = {
+          success: true,
+          settings,
+          timestamp: Date.now()
+        };
+        fs.writeFileSync(smokeTestOutPath, JSON.stringify(payload, null, 2), 'utf-8');
+        console.log('[SmokeTest] Marker file written successfully:', smokeTestOutPath);
+        setTimeout(() => {
+          app.quit();
+        }, 500);
+      } catch (err: any) {
+        console.error('[SmokeTest] IPC verification failed:', err);
+        const payload = {
+          success: false,
+          error: err?.message || String(err),
+          timestamp: Date.now()
+        };
+        try {
+          fs.writeFileSync(smokeTestOutPath, JSON.stringify(payload, null, 2), 'utf-8');
+        } catch {}
+        setTimeout(() => {
+          app.quit();
+        }, 500);
+      }
+    });
+  }
 
   // Load URL or file
   if (process.env.ELECTRON_RENDERER_URL) {

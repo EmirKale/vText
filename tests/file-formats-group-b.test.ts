@@ -130,6 +130,107 @@ describe('Grup B: Dosya Formatları ve Kodlama Testleri (B1-B6)', () => {
     const cp1254Buf = Buffer.from([0x48, 0x6f, 0xfe]);
     const decodedCp1254 = decodeTextBuffer(cp1254Buf);
     assert.equal(decodedCp1254, 'Hoş', 'Windows-1254 baytları Türkçe olarak çözülmelidir');
+
+    // 4. UTF-16 LE BOM (0xFF 0xFE)
+    const utf16leText = 'vText UTF-16 LE Türkçe: Ğüç';
+    const utf16leEncoded = Buffer.from(utf16leText, 'utf16le');
+    const bomUtf16le = Buffer.concat([Buffer.from([0xff, 0xfe]), utf16leEncoded]);
+    assert.equal(decodeTextBuffer(bomUtf16le), utf16leText, 'UTF-16 LE BOM dosya içeriği doğru çözülmelidir');
+
+    // 5. UTF-16 BE BOM (0xFE 0xFF)
+    const beEncoded = Buffer.from(utf16leEncoded);
+    beEncoded.swap16();
+    const bomUtf16be = Buffer.concat([Buffer.from([0xfe, 0xff]), beEncoded]);
+    assert.equal(decodeTextBuffer(bomUtf16be), utf16leText, 'UTF-16 BE BOM dosya içeriği doğru çözülmelidir');
+  });
+
+  it('B1b: TXT dışa aktarımı: Tablo (sekme \\t), blok alıntı (> OLMADAN), callout, promptBlock, codeBlock (tırnaksız), hardBreak kuralları', () => {
+    const tipTapDoc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Başlık' }]
+        },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Satır 1' },
+            { type: 'hardBreak' },
+            { type: 'text', text: 'Satır 2 (hardBreak)' }
+          ]
+        },
+        {
+          type: 'blockquote',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Bu bir alıntı metnidir.' }]
+            }
+          ]
+        },
+        {
+          type: 'callout',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Önemli bilgi kutusu.' }]
+            }
+          ]
+        },
+        {
+          type: 'codeBlock',
+          attrs: { language: 'javascript' },
+          content: [{ type: 'text', text: 'const a = 1;\nconsole.log(a);' }]
+        },
+        {
+          type: 'promptBlock',
+          content: [{ type: 'text', text: 'Yapay zeka istemi metni.' }]
+        },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Ad' }] }] },
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Yaş' }] }] }
+              ]
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Ali' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: '25' }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const out = tipTapJsonToPlainText(tipTapDoc);
+
+    // 1. hardBreak
+    assert.match(out, /Satır 1\nSatır 2 \(hardBreak\)/);
+
+    // 2. blockquote (> OLMADAN düz metin)
+    assert.equal(out.includes('>'), false, 'Blok alıntıda > işareti bulunmamalıdır');
+    assert.match(out, /Bu bir alıntı metnidir\./);
+
+    // 3. callout
+    assert.match(out, /Önemli bilgi kutusu\./);
+
+    // 4. codeBlock (tırnaksız düz metin)
+    assert.equal(out.includes('```'), false, 'Kod bloğunda ``` tırnakları bulunmamalıdır');
+    assert.match(out, /const a = 1;\nconsole\.log\(a\);/);
+
+    // 5. promptBlock
+    assert.match(out, /Yapay zeka istemi metni\./);
+
+    // 6. table hücreleri tab (\t) ile ayrılmış olmalıdır
+    assert.match(out, /Ad\tYaş\nAli\t25/);
   });
 
   // B3. MD VE TXT AÇMA TESTİ

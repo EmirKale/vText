@@ -17,11 +17,11 @@ export function tipTapJsonToPlainText(node: any): string {
           .join('\n\n');
 
       case 'heading': {
-        return (n.content || []).map((c: any) => c.text || '').join('');
+        return (n.content || []).map((c: any) => serialize(c)).join('');
       }
 
       case 'paragraph': {
-        return (n.content || []).map((c: any) => c.text || '').join('');
+        return (n.content || []).map((c: any) => serialize(c)).join('');
       }
 
       case 'blockquote': {
@@ -60,6 +60,13 @@ export function tipTapJsonToPlainText(node: any): string {
           })
           .join('\n');
       }
+
+      case 'callout': {
+        return (n.content || []).map((c: any) => serialize(c)).join('\n');
+      }
+
+      case 'hardBreak':
+        return '\n';
 
       case 'horizontalRule':
         return '---';

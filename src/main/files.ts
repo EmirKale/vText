@@ -19,6 +19,14 @@ export function decodeTextBuffer(buffer: Buffer): string {
   if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
     return new TextDecoder('utf-8').decode(buffer.subarray(3));
   }
+  // Check UTF-16 LE BOM: FF FE
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buffer.subarray(2));
+  }
+  // Check UTF-16 BE BOM: FE FF
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buffer.subarray(2));
+  }
   // Try strict UTF-8
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
