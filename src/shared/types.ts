@@ -58,7 +58,6 @@ export interface AppSettings {
   autoSaveInterval: number; // in seconds
   hasPandoc: boolean;
   hasLibreOffice: boolean;
-  updateRepo?: string;
   autoCheckUpdates?: boolean;
 }
 

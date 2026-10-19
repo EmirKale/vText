@@ -2,6 +2,7 @@ import sys
 import os
 import fitz  # PyMuPDF
 import json
+import re
 
 def convert_pdf_to_png(pdf_path, png_path, assert_styles=False):
     if not os.path.exists(pdf_path):
@@ -116,13 +117,45 @@ def convert_pdf_to_png(pdf_path, png_path, assert_styles=False):
             if not is_it:
                 errors.append(f"İtalik span'ın fontu veya flag'i italik olmalıdır, bulunan: '{it_span['font']}'")
 
+        # 6. Numaralı liste kontrolü (1., 2., 3. ile başlayan satırlar)
+        full_text = page.get_text("text")
+        has_item1 = bool(re.search(r'1\.\s*\n?\s*İlk adım', full_text))
+        has_item2 = bool(re.search(r'2\.\s*\n?\s*İkinci adım', full_text))
+        has_item3 = bool(re.search(r'3\.\s*\n?\s*Üçüncü adım', full_text))
+        if not (has_item1 and has_item2 and has_item3):
+            errors.append("Numaralı liste satırları '1.', '2.', '3.' ile başlamalıdır!")
+        else:
+            print("Numaralı Liste Doğrulaması: '1.', '2.', '3.' maddeleri başarıyla doğrulandı.")
+
+        # 7. Tablo Başlık Gölgesi (#F3F4F6) ve Kenarlık Çizgileri (#9CA3AF)
+        drawings = page.get_drawings()
+        fills = [d for d in drawings if d.get('fill') is not None]
+        strokes = [d for d in drawings if d.get('color') is not None]
+
+        header_shd_fills = [
+            f for f in fills
+            if f.get('fill') and all(abs(c - exp) < 0.06 for c, exp in zip(f['fill'], (0.953, 0.957, 0.965)))
+        ]
+        border_strokes = [
+            s for s in strokes
+            if s.get('color') and all(abs(c - exp) < 0.06 for c, exp in zip(s['color'], (0.612, 0.639, 0.686)))
+        ]
+
+        print(f"Tablo Çizimleri: Toplam Dolgu = {len(header_shd_fills)} adet (#F3F4F6), Toplam Kenarlık Çizgisi = {len(border_strokes)} adet (#9CA3AF)")
+        print(f"DRAWINGS_STATS: {json.dumps({'fills': len(header_shd_fills), 'strokes': len(border_strokes)})}")
+
+        if len(header_shd_fills) == 0:
+            errors.append("Tablo başlık satırı gölgesi (#F3F4F6) PDF çizimlerinde bulunamadı!")
+        if len(border_strokes) == 0:
+            errors.append("Tablo kenarlık çizgileri (#9CA3AF, 0.5pt) PDF çizimlerinde bulunamadı!")
+
         if errors:
             print("\n[FAIL] GORUNUM DOGRULAMA BASARISIZ OLDU:")
             for e in errors:
                 print(f"  [X] {e}")
             sys.exit(1)
         else:
-            print("\n[PASS] GORUNUM DOGRULAMA BASARILI: Başlık 1/2/3, gövde ve italik stilleri beklenen kurallara uygundur.")
+            print("\n[PASS] GORUNUM DOGRULAMA BASARILI: Başlıklar, listeler, tablo ve stiller beklenen kurallara uygundur.")
             
     return True
 

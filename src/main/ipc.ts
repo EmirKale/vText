@@ -39,6 +39,7 @@ import {
   getImagePromptGeneratorSystemPrompt,
   ProofreadSchema
 } from './ai/prompts';
+import { SaveSettingsSchema } from './ipcSchemas';
 import {
   AppSettings,
   GenerateArticleOptions,
@@ -247,6 +248,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const hasKey = !!getApiKey();
     const masked = getMaskedApiKey();
 
+    if (store.has('updateRepo')) {
+      try {
+        store.delete('updateRepo');
+      } catch {}
+    }
+
     return {
       hasApiKey: hasKey,
       maskedApiKey: masked,
@@ -259,12 +266,16 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       autoSaveInterval: (store.get('autoSaveInterval') as number) || 30,
       hasPandoc: tools.hasPandoc,
       hasLibreOffice: tools.hasLibreOffice,
-      updateRepo: (store.get('updateRepo') as string) || '',
       autoCheckUpdates: (store.get('autoCheckUpdates') as boolean) ?? true
     };
   });
 
-  registerSecureHandler('settings:save', async (_, newSettings: Partial<AppSettings>) => {
+  registerSecureHandler('settings:save', async (_, rawSettings: unknown) => {
+    const validated = validateIpc(SaveSettingsSchema, rawSettings);
+    if (!validated.success) {
+      throw new Error(`Geçersiz ayar verisi: ${validated.error}`);
+    }
+    const newSettings = validated.data;
     if (newSettings.textModel) store.set('textModel', newSettings.textModel);
     if (newSettings.imageModel) store.set('imageModel', newSettings.imageModel);
     if (newSettings.defaultLanguage) store.set('defaultLanguage', newSettings.defaultLanguage);
@@ -277,7 +288,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     if (newSettings.fontSize) store.set('fontSize', newSettings.fontSize);
     if (newSettings.autoSaveInterval) store.set('autoSaveInterval', newSettings.autoSaveInterval);
-    if (newSettings.updateRepo !== undefined) store.set('updateRepo', newSettings.updateRepo);
     if (newSettings.autoCheckUpdates !== undefined) store.set('autoCheckUpdates', newSettings.autoCheckUpdates);
     return true;
   });

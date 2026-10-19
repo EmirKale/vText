@@ -186,6 +186,19 @@ export const ConfirmOverwriteSchema = z.object({
   isDirty: z.boolean().default(false)
 });
 
+export const SaveSettingsSchema = z
+  .object({
+    textModel: z.string().trim().min(1).max(100).optional(),
+    imageModel: z.string().trim().min(1).max(100).optional(),
+    defaultLanguage: z.string().trim().min(1).max(50).optional(),
+    defaultTone: z.string().trim().min(1).max(100).optional(),
+    theme: z.enum(['light', 'dark', 'system']).optional(),
+    fontSize: z.number().int().min(8).max(72).optional(),
+    autoSaveInterval: z.number().int().min(5).max(3600).optional(),
+    autoCheckUpdates: z.boolean().optional()
+  })
+  .strict();
+
 // Helper validation runner
 export function validateIpc<T>(
   schema: z.ZodSchema<T>,

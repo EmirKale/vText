@@ -189,12 +189,29 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       };
     }
 
+function preserveDocxTableStructure(docElement: any): any {
+  if (!docElement) return docElement;
+  if (docElement.type === 'table' && Array.isArray(docElement.children) && docElement.children.length > 0) {
+    const hasExplicitHeader = docElement.children.some((row: any) => row.isHeader);
+    if (!hasExplicitHeader) {
+      docElement.children[0].isHeader = true;
+    }
+  }
+  if (Array.isArray(docElement.children)) {
+    docElement.children.forEach(preserveDocxTableStructure);
+  }
+  return docElement;
+}
+
     // 2. DOCX (mammoth with B5: ignoreEmptyParagraphs: false)
     if (ext === 'docx') {
       const buffer = await fs.promises.readFile(filePath);
       const mammothResult = await mammoth.convertToHtml(
         { buffer },
-        { ignoreEmptyParagraphs: false }
+        {
+          ignoreEmptyParagraphs: false,
+          transformDocument: preserveDocxTableStructure
+        }
       );
       const entry = documentRegistry.register(filePath, 'docx', title);
       return {
@@ -214,7 +231,10 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
         const buffer = await fs.promises.readFile(converted.outputPath);
         const mammothResult = await mammoth.convertToHtml(
           { buffer },
-          { ignoreEmptyParagraphs: false }
+          {
+            ignoreEmptyParagraphs: false,
+            transformDocument: preserveDocxTableStructure
+          }
         );
         const entry = documentRegistry.register(filePath, ext, title);
         return {

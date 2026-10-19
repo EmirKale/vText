@@ -13,8 +13,13 @@ import {
   ShadingType,
   PageBreak,
   PageOrientation,
-  ImageRun
+  ImageRun,
+  LevelFormat
 } from 'docx';
+
+export const DOCX_TABLE_BORDER_COLOR = '9CA3AF';
+export const DOCX_TABLE_BORDER_SIZE = 4; // 0.5 pt (in eighths of a point)
+export const DOCX_TABLE_HEADER_SHADING_COLOR = 'F3F4F6';
 
 export async function exportTipTapJsonToDocx(
   docJson: any,
@@ -252,27 +257,38 @@ export async function exportTipTapJsonToDocx(
       }
 
       case 'table': {
+        const tableBorders = {
+          top: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR },
+          bottom: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR },
+          left: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR },
+          right: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR },
+          insideVertical: { style: BorderStyle.SINGLE, size: DOCX_TABLE_BORDER_SIZE, color: DOCX_TABLE_BORDER_COLOR }
+        };
+
         const rows = (node.content || []).map((rowNode: any) => {
+          const hasHeader = (rowNode.content || []).some((c: any) => c.type === 'tableHeader');
           const cells = (rowNode.content || []).map((cellNode: any) => {
             const cellChildren = (cellNode.content || []).map((p: any) => convertNode(p)).flat();
             const isHeader = cellNode.type === 'tableHeader';
             return new TableCell({
               children: cellChildren.length > 0 ? cellChildren : [new Paragraph({})],
-              shading: isHeader ? { type: ShadingType.CLEAR, fill: 'F9FAFB' } : undefined,
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-                bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-                left: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
-                right: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' }
-              },
+              shading: isHeader
+                ? { type: ShadingType.CLEAR, fill: DOCX_TABLE_HEADER_SHADING_COLOR }
+                : undefined,
+              borders: tableBorders,
               margins: { top: 120, bottom: 160, left: 140, right: 140 }
             });
           });
-          return new TableRow({ children: cells });
+          return new TableRow({
+            children: cells,
+            tableHeader: hasHeader ? true : undefined
+          });
         });
 
         return new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: tableBorders,
           rows
         });
       }
@@ -307,6 +323,48 @@ export async function exportTipTapJsonToDocx(
 
   const doc = new Document({
     title: documentTitle,
+    numbering: {
+      config: [
+        {
+          reference: 'numbered-list',
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.DECIMAL,
+              text: '%1.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 720, hanging: 360 }
+                }
+              }
+            },
+            {
+              level: 1,
+              format: LevelFormat.LOWER_LETTER,
+              text: '%2.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 1440, hanging: 360 }
+                }
+              }
+            },
+            {
+              level: 2,
+              format: LevelFormat.LOWER_ROMAN,
+              text: '%3.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 2160, hanging: 360 }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
     styles: {
       default: {
         document: {

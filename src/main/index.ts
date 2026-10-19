@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell, nativeTheme, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import Store from 'electron-store';
 import { registerIpcHandlers } from './ipc';
 import { initAutoUpdater } from './updater';
@@ -8,6 +9,7 @@ import { registerKalemAssetProtocol, openFileByPath } from './files';
 import { getApiKey } from './keystore';
 
 import { closeCoordinator } from './closeCoordinator';
+import { isValidSmokeTestOutPath } from './smokeValidator';
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
@@ -213,8 +215,9 @@ function createWindow(): void {
   const isSmokeTest = process.argv.includes('--smoke-test');
   const smokeOutArg = process.argv.find((arg) => arg.startsWith('--smoke-test-out='));
   const smokeTestOutPath = smokeOutArg ? smokeOutArg.slice('--smoke-test-out='.length) : null;
+  const isValidOutPath = isValidSmokeTestOutPath(smokeTestOutPath);
 
-  if (isSmokeTest && smokeTestOutPath) {
+  if (isSmokeTest && isValidOutPath && smokeTestOutPath) {
     mainWindow.webContents.on('did-finish-load', async () => {
       try {
         console.log('[SmokeTest] did-finish-load triggered, verifying IPC via window.api.settings.get()...');
@@ -228,9 +231,11 @@ function createWindow(): void {
             api.settings.get().then(resolve).catch(reject);
           })
         `);
+        // Only write status and setting keys; NEVER write values (including API keys)
+        const settingKeys = settings && typeof settings === 'object' ? Object.keys(settings).sort() : [];
         const payload = {
           success: true,
-          settings,
+          settingKeys,
           timestamp: Date.now()
         };
         fs.writeFileSync(smokeTestOutPath, JSON.stringify(payload, null, 2), 'utf-8');

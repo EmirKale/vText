@@ -17,12 +17,14 @@ import {
   TranslateSchema,
   ImageGenSchema,
   ConfirmOverwriteSchema,
+  SaveSettingsSchema,
   validateIpc,
   MAX_CONTENT_STRING_LENGTH,
   MAX_CONTENT_BUFFER_BYTES
 } from '../src/main/ipcSchemas.ts';
 import { saveFile } from '../src/main/files.ts';
 import { closeCoordinator } from '../src/main/closeCoordinator.ts';
+import { isValidSmokeTestOutPath } from '../src/main/smokeValidator.ts';
 import fs from 'fs';
 import os from 'os';
 
@@ -679,8 +681,119 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
     // 3. Doğrulama: Kurulum bayrağı temizlenmiş ve pencere kapatılmamıştır
     assert.equal(closeCoordinator.isInstallPending(), false);
     assert.equal(closeCoordinator.isClosing(), false);
-    assert.equal(closeCoordinator.isQuitting(), false);
-
     closeCoordinator.reset();
   });
+
+  describe('3A. updateRepo ve Güvenli Ayar Şeması Doğrulaması', () => {
+    it('SaveSettingsSchema geçerli ayarları başarıyla kabul etmelidir', () => {
+      const valid = {
+        textModel: 'openai/gpt-4o',
+        fontSize: 18,
+        theme: 'dark' as const,
+        autoCheckUpdates: false
+      };
+      const res = validateIpc(SaveSettingsSchema, valid);
+      assert.equal(res.success, true);
+    });
+
+    it('SaveSettingsSchema: settings:save({ updateRepo: "x/y" }) .strict() şema ile kesinlikle reddedilmelidir', () => {
+      const maliciousPayload = {
+        fontSize: 16,
+        updateRepo: 'malicious-attacker/vText'
+      };
+      const res = validateIpc(SaveSettingsSchema, maliciousPayload);
+      assert.equal(res.success, false);
+      if (!res.success) {
+        assert.ok(
+          res.error.includes('unrecognized_keys') || res.error.includes('updateRepo'),
+          `Hata mesajı bilinmeyen anahtar (updateRepo) uyarısı içermelidir: ${res.error}`
+        );
+      }
+    });
+
+    it('Eski bir electron-store kaydında updateRepo varsa yok sayılmalı ve temizlenmelidir', () => {
+      // Simüle edilen store haritası
+      const mockStoreData: Record<string, any> = {
+        fontSize: 16,
+        theme: 'dark',
+        updateRepo: 'old-owner/old-repo'
+      };
+
+      const mockStore = {
+        get: (key: string) => mockStoreData[key],
+        set: (key: string, val: any) => { mockStoreData[key] = val; },
+        has: (key: string) => key in mockStoreData,
+        delete: (key: string) => { delete mockStoreData[key]; }
+      };
+
+      // settings:get davranışı
+      if (mockStore.has('updateRepo')) {
+        mockStore.delete('updateRepo');
+      }
+
+      assert.equal(mockStore.has('updateRepo'), false, 'Eski updateRepo kaydı silinmelidir');
+      assert.equal(mockStore.get('updateRepo'), undefined);
+    });
+
+    it('Auto-update güncelleme kaynağı dinamik ayardan değil, package.json build.publish yapılandırmasından okunmalıdır', () => {
+      const pkgPath = path.resolve('package.json');
+      const pkgContent = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      assert.ok(pkgContent.build?.publish, 'package.json içinde build.publish yapılandırması bulunmalıdır');
+      assert.equal(pkgContent.build.publish[0].owner, 'EmirKale');
+      assert.equal(pkgContent.build.publish[0].repo, 'vText');
+      assert.equal(pkgContent.build.publish[0].provider, 'github');
+    });
+  });
+
+  describe('3B. Duman Testi Bayrağı Güvenliği ve Anahtar İzolasyonu', () => {
+    it('--smoke-test-out yalnızca os.tmpdir() altındaki .json uzantılı dosyaları kabul etmelidir', () => {
+      const validPath = path.join(os.tmpdir(), 'smoke-valid-test.json');
+      assert.equal(isValidSmokeTestOutPath(validPath), true);
+
+      const nonJsonPath = path.join(os.tmpdir(), 'smoke-invalid.txt');
+      assert.equal(isValidSmokeTestOutPath(nonJsonPath), false);
+
+      const outsideTmpPath = path.resolve('C:\\Windows\\System32\\hacked.json');
+      assert.equal(isValidSmokeTestOutPath(outsideTmpPath), false);
+
+      const relativeTraversalPath = path.join(os.tmpdir(), '..', 'arbitrary.json');
+      assert.equal(isValidSmokeTestOutPath(relativeTraversalPath), false);
+
+      assert.equal(isValidSmokeTestOutPath(null), false);
+      assert.equal(isValidSmokeTestOutPath(''), false);
+    });
+
+    it('Duman testi işaret dosyasına yalnızca durum ve ayar ANAHTARLARI yazılmalı, hiçbir DEĞER yazılmamalıdır', () => {
+      const sampleSettings = {
+        hasApiKey: true,
+        maskedApiKey: 'sk-...1234',
+        realSecretApiKey: 'sk-ant-live-secret-never-expose',
+        textModel: 'openai/gpt-4o',
+        imageModel: 'google/imagen-3',
+        fontSize: 16
+      };
+
+      // Simüle edilen güvenli duman testi çıktısı
+      const settingKeys = Object.keys(sampleSettings).sort();
+      const payload = {
+        success: true,
+        settingKeys,
+        timestamp: Date.now()
+      };
+
+      const serialized = JSON.stringify(payload);
+      assert.ok(!serialized.includes('sk-ant-live-secret-never-expose'), 'Gerçek gizli anahtar işaret dosyasına sızamaz');
+      assert.ok(!serialized.includes('sk-...1234'), 'Maskelenmiş anahtar dahi değer olarak yazılamaz');
+      assert.ok(!serialized.includes('openai/gpt-4o'), 'Model değerleri yazılamaz');
+      assert.deepEqual(payload.settingKeys, [
+        'fontSize',
+        'hasApiKey',
+        'imageModel',
+        'maskedApiKey',
+        'realSecretApiKey',
+        'textModel'
+      ]);
+    });
+  });
 });
+

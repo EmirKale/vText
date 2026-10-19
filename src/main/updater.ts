@@ -14,23 +14,6 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  // Configure custom repo if saved by user
-  const savedRepo = store.get('updateRepo') as string | undefined;
-  if (savedRepo && savedRepo.includes('/')) {
-    const [owner, repo] = savedRepo.trim().split('/');
-    if (owner && repo) {
-      try {
-        autoUpdater.setFeedURL({
-          provider: 'github',
-          owner,
-          repo
-        });
-      } catch (err) {
-        console.error('[AutoUpdater] Failed to set feed URL:', err);
-      }
-    }
-  }
-
   const sendStatus = (data: UpdateStatusData) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('updater:status', data);

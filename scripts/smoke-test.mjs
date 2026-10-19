@@ -28,6 +28,8 @@ if (fs.existsSync(markerFile)) {
 let exitedPrematurely = false;
 let exitCode = null;
 
+let appOutput = '';
+
 // 2. Exe'yi izole parametrelerle başlat
 const child = spawn(
   exePath,
@@ -38,10 +40,17 @@ const child = spawn(
   ],
   {
     cwd: path.dirname(exePath),
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     detached: false
   }
 );
+
+child.stdout?.on('data', (chunk) => {
+  appOutput += chunk.toString();
+});
+child.stderr?.on('data', (chunk) => {
+  appOutput += chunk.toString();
+});
 
 child.on('error', (err) => {
   console.error(`[Smoke Test] Exe başlatılamadı:`, err);
@@ -69,9 +78,10 @@ while (elapsed < maxWaitMs) {
     try {
       const raw = fs.readFileSync(markerFile, 'utf-8');
       const data = JSON.parse(raw);
-      if (data && data.success === true && data.settings) {
+      if (data && data.success === true && (data.settingKeys || data.settings)) {
+        const keys = data.settingKeys || Object.keys(data.settings);
         console.log(`[Smoke Test] BAŞARILI! İşaret dosyası ${elapsed}ms içinde yazıldı ve IPC settings:get doğrulandı.`);
-        console.log(`[Smoke Test] Ayar anahtarları:`, Object.keys(data.settings));
+        console.log(`[Smoke Test] Ayar anahtarları (yalnızca anahtarlar, değer içermez):`, keys);
         success = true;
         break;
       } else {
@@ -86,6 +96,9 @@ while (elapsed < maxWaitMs) {
 
   if (exitedPrematurely) {
     console.error(`[Smoke Test] BAŞARISIZ! İşaret dosyası yazılmadan uygulama kapandı (Çıkış kodu / Sinyal: ${exitCode}).`);
+    if (appOutput.trim()) {
+      console.error(`[Smoke Test] Uygulama Hata / Konsol Çıktısı:\n${appOutput.trim()}`);
+    }
     cleanup();
     process.exit(1);
   }

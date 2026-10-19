@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   XCircle,
   ArrowUpCircle,
-  GitBranch,
   Settings2
 } from 'lucide-react';
 import { OpenRouterModel, UpdateStatusData } from '../../../shared/types';
@@ -30,7 +29,6 @@ export const SettingsModal: React.FC = () => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   const [appVersion, setAppVersion] = useState('1.0.0');
-  const [updateRepoInput, setUpdateRepoInput] = useState('');
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateFeedback, setUpdateFeedback] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null);
   const [currentUpdateStatus, setCurrentUpdateStatus] = useState<UpdateStatusData | null>(null);
@@ -71,7 +69,6 @@ export const SettingsModal: React.FC = () => {
 
     const current = await window.kalem.settings.get();
     updateSettings(current);
-    setUpdateRepoInput(current.updateRepo || '');
 
     setIsLoadingModels(true);
     try {
@@ -141,11 +138,6 @@ export const SettingsModal: React.FC = () => {
     const tabs = useAppStore.getState().tabs;
     const hasDirtyTabs = tabs.some((t) => t.isDirty);
     await window.kalem.updater.install({ hasDirtyTabs });
-  };
-
-  const handleSaveRepo = () => {
-    handleSettingChange('updateRepo', updateRepoInput.trim());
-    setUpdateFeedback({ type: 'success', message: 'GitHub deposu kaydedildi.' });
   };
 
   const handleSettingChange = (field: keyof typeof settings, val: any) => {
@@ -434,27 +426,6 @@ export const SettingsModal: React.FC = () => {
               />
               <span>Açılışta güncellemeleri otomatik denetle</span>
             </label>
-
-            <div className="flex items-center gap-2 pt-1">
-              <div className="flex items-center gap-1.5 text-muted shrink-0 text-2xs">
-                <GitBranch className="w-3.5 h-3.5" />
-                <span>GitHub Deposu:</span>
-              </div>
-              <input
-                type="text"
-                placeholder="örn: EmirKale/vText"
-                value={updateRepoInput}
-                onChange={(e) => setUpdateRepoInput(e.target.value)}
-                className="field h-8 flex-1 font-mono text-[11px]"
-              />
-              <button
-                type="button"
-                onClick={handleSaveRepo}
-                className="btn-ghost h-8 px-2.5 text-2xs"
-              >
-                Kaydet
-              </button>
-            </div>
           </div>
         </div>
       </div>

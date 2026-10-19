@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
+import mammoth from 'mammoth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -441,6 +442,12 @@ async function runScenario6() {
 async function assertDocxXmlStructure(filePath) {
   const zip = await JSZip.loadAsync(fs.readFileSync(filePath));
   const xml = await zip.file('word/document.xml').async('string');
+  const numXml = await zip.file('word/numbering.xml').async('string');
+
+  // 1A.3: numbering.xml'de bullet için numFmt="bullet", numaralı için numFmt="decimal"
+  assert.ok(numXml.includes('w:numFmt w:val="bullet"'), 'numbering.xml madde işaretli liste için numFmt="bullet" içermelidir');
+  assert.ok(numXml.includes('w:numFmt w:val="decimal"'), 'numbering.xml numaralı liste için numFmt="decimal" içermelidir');
+  assert.ok(numXml.includes('w:lvlText w:val="%1."'), 'numbering.xml numaralı liste için lvlText="%1." içermelidir');
 
   // a) word/document.xml: başlık paragraflarının pStyle değerleri (Heading1/2/3)
   assert.ok(xml.includes('w:pStyle w:val="Heading1"'), 'document.xml Heading1 pStyle içermelidir');
@@ -451,6 +458,17 @@ async function assertDocxXmlStructure(filePath) {
   const tblMatch = xml.match(/<w:tbl[\s>][\s\S]*?<\/w:tbl>/);
   assert.ok(tblMatch, 'document.xml içinde w:tbl bulunmalıdır');
   const tblXml = tblMatch[0];
+
+  // 1C: tblBorders kontrolü (tablo kenarlıkları #9CA3AF ve 0.5pt = sz="4")
+  const tblBordersMatch = tblXml.match(/<w:tblBorders[\s>][\s\S]*?<\/w:tblBorders>/);
+  assert.ok(tblBordersMatch, 'w:tblPr içinde w:tblBorders bulunmalıdır');
+  assert.ok(tblBordersMatch[0].includes('w:color="9CA3AF"'), 'w:tblBorders içinde #9CA3AF renk tanımlı olmalıdır');
+  assert.ok(tblBordersMatch[0].includes('w:sz="4"'), 'w:tblBorders içinde 0.5pt (sz="4") kenarlık tanımlı olmalıdır');
+
+  // 1B.3: Tablo başlık hücrelerinde w:shd var (#F3F4F6)
+  assert.ok(tblXml.includes('w:fill="F3F4F6"'), 'Tablo başlık hücresinde w:shd w:fill="F3F4F6" gölgesi bulunmalıdır');
+  assert.ok(tblXml.includes('<w:tblHeader/>') || tblXml.includes('<w:tblHeader />'), 'Tablo başlık satırında w:tblHeader bulunmalıdır');
+
   const rows = tblXml.match(/<w:tr[\s>]/g) || [];
   assert.equal(rows.length, 3, 'w:tbl içinde tam 3 satır bulunmalıdır');
 
@@ -462,13 +480,14 @@ async function assertDocxXmlStructure(filePath) {
 
   // listeler için w:numPr
   assert.ok(xml.includes('<w:numPr>'), 'document.xml listeler için w:numPr içermelidir');
+  assert.ok(!xml.includes('{numbered-list-0}'), 'document.xml içinde çözülmemiş {numbered-list-0} bulunmamalıdır');
 
   // boş paragraflar (w:p içinde w:t olmayan)
   const paras = xml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || [];
   const emptyParas = paras.filter(p => !p.includes('<w:t') && !p.includes('<w:drawing'));
   assert.ok(emptyParas.length > 0, 'document.xml içinde boş paragraflar (w:p içinde w:t olmayan) bulunmalıdır');
 
-  console.log(`  [XML Doğrulama] Heading1/2/3: OK | Tablo: 3x3 | numPr: OK | Boş paragraf: ${emptyParas.length} adet`);
+  console.log(`  [XML Doğrulama] Heading1/2/3: OK | Numaralı/Madde No: OK | Tablo 3x3 tblBorders & shd: OK | Boş paragraf: ${emptyParas.length} adet`);
 }
 
 function assertDocxPdfAndImage(docxPath, workDir, pngArtifactPath) {
@@ -490,6 +509,10 @@ function assertDocxPdfAndImage(docxPath, workDir, pngArtifactPath) {
     const renderOutput = execSync(`"${pyExe}" "${scriptPath}" --assert-styles "${pdfPath}" "${pngArtifactPath}"`).toString();
     console.log('  [LibreOffice & PyMuPDF]', renderOutput.trim());
     assert.ok(fs.existsSync(pngArtifactPath), `${pngArtifactPath} diskte oluşturulmalıdır`);
+
+    const statsMatch = renderOutput.match(/DRAWINGS_STATS:\s*({.*})/);
+    const stats = statsMatch ? JSON.parse(statsMatch[1]) : { fills: 0, strokes: 0 };
+    return stats;
   } catch (err) {
     if (err.stdout) console.error('  [PyMuPDF Doğrulama Çıktısı]:\n' + err.stdout.toString());
     if (err.stderr) console.error(err.stderr.toString());
@@ -616,7 +639,7 @@ async function runScenario7() {
     logPass('İlk üretilen DOCX word/document.xml doğrulamalarını başarıyla geçti.');
 
     // 2b & 2c. LibreOffice PDF & PyMuPDF stil doğrulaması ve PNG çıktısı
-    assertDocxPdfAndImage(docxPath, env.tmpWorkDir, pngPath);
+    const initialDrawings = assertDocxPdfAndImage(docxPath, env.tmpWorkDir, pngPath);
     logPass(`İlk DOCX LibreOffice ile PDF/PNG'ye dönüştürüldü ve PyMuPDF stilleri doğrulandı: ${pngPath}`);
 
     // Başlangıç paragraf sayısını ölç
@@ -646,20 +669,40 @@ async function runScenario7() {
       await env.page.keyboard.press('Control+w');
       await env.page.waitForTimeout(600);
 
+      // Her turun docx'ini ayrı sakla (1B.1)
+      const roundDocx = path.join(artifactsDir, `scenario7_round${round}.docx`);
+      fs.copyFileSync(docxPath, roundDocx);
+
+      // Mammoth HTML çıktısını incele (1B.1: <ol> ve <th> korunuyor mu?)
+      const buf = fs.readFileSync(docxPath);
+      const mRes = await mammoth.convertToHtml({ buffer: buf }, { ignoreEmptyParagraphs: false });
+      const hasOl = mRes.value.includes('<ol>');
+      const hasTh = mRes.value.includes('<th>');
+
       const pCount = await countDocxParagraphs(docxPath);
-      console.log(`  Tur ${round}: Paragraf sayısı = ${pCount}`);
+      console.log(`  Tur ${round}: Paragraf = ${pCount} | Mammoth <ol>: ${hasOl} | Mammoth <th>: ${hasTh}`);
       assert.equal(pCount, initialParagraphCount, `Tur ${round}'de paragraf sayısı sabit kalmalıdır!`);
+      assert.ok(hasOl, `Tur ${round}'de mammoth çıktısında numaralı liste (<ol>) korunmalıdır`);
+      assert.ok(hasTh, `Tur ${round}'de mammoth çıktısında tablo başlığı (<th>) korunmalıdır`);
       lastParagraphCount = pCount;
     }
-    logPass(`5 tur kaydet-aç döngüsünde paragraf sayısı (${lastParagraphCount}) tamamen sabit kaldı.`);
+    logPass(`5 tur kaydet-aç döngüsünde paragraf sayısı (${lastParagraphCount}), <ol> ve <th> tamamen korundu.`);
 
     // 2d. Beş turluk döngünün SON dosyasına da aynı XML ve PDF/PNG assertion'ları uygulanır
     await assertDocxXmlStructure(docxPath);
-    logPass('5. turun son dosyasında word/document.xml (Heading1/2/3, w:tbl 3x3, w:numPr, boş paragraflar) doğrulandı.');
+    logPass('5. turun son dosyasında word/document.xml (Heading1/2/3, w:tbl 3x3, tblBorders, w:shd, w:numPr, boş paragraflar) doğrulandı.');
 
     const roundtripFinalPngPath = path.join(artifactsDir, 'scenario7_roundtrip_final_rendered.png');
-    assertDocxPdfAndImage(docxPath, env.tmpWorkDir, roundtripFinalPngPath);
+    const round5Drawings = assertDocxPdfAndImage(docxPath, env.tmpWorkDir, roundtripFinalPngPath);
     logPass(`5. turun son dosyasında LibreOffice & PyMuPDF stilleri doğrulandı: ${roundtripFinalPngPath}`);
+
+    // 1B.3: PyMuPDF page.get_drawings() ile tablonun dolgu dikdörtgeni ve çizgileri iki dosyada da eşit olmalı
+    console.log(`  [Çizim Karşılaştırma] İlk Dosya: ${JSON.stringify(initialDrawings)} | 5. Tur: ${JSON.stringify(round5Drawings)}`);
+    assert.equal(round5Drawings.fills, initialDrawings.fills, 'Tablo başlık gölgesi dolgusu sayısı ilk dosya ile 5. tur dosyasında eşit olmalıdır');
+    assert.equal(round5Drawings.strokes, initialDrawings.strokes, 'Tablo kenarlık çizgisi sayısı ilk dosya ile 5. tur dosyasında eşit olmalıdır');
+    assert.ok(round5Drawings.fills > 0, 'Tablo başlık gölgesi dolgusu bulunmalıdır');
+    assert.ok(round5Drawings.strokes > 0, 'Tablo kenarlık çizgisi bulunmalıdır');
+    logPass('İlk dosya ile 5. tur dosyasında tablo dolgu ve çizgi sayıları birebir eşit doğrulandı.');
 
     passedCount++;
     results.push({ name: 'Senaryo 7: DOCX Canlı Üretim, XML/PDF Stilleri & 5 Tur Döngü', status: 'PASS' });
@@ -677,7 +720,7 @@ async function runScenario7() {
 // =====================================================================
 async function runScenario8() {
   logSection('SENARYO 8: Kapatma Akışları (Kaydet, Kaydetme, İptal, Son Sekme, Çakışma Uyarısı)');
-  
+  try {
   // 8A. Kaydedilmemiş sekme yokken onaysız doğrudan kapanma
   {
     const env = await createTestApp();
@@ -720,6 +763,9 @@ async function runScenario8() {
       });
       await new Promise((r) => setTimeout(r, 800));
 
+      const isDestroyed = await isAppOrWindowClosed(env.app);
+      assert.ok(!isDestroyed, 'Kaydedilmemiş sekme varken pencere onay diyaloğu açılmadan kapandı (Pencere X)');
+
       const dialogCount = await env.app.evaluate(() => (globalThis).__confirmDialogCount);
       assert.ok(dialogCount >= 1, 'Pencere X kapatmasında onay diyaloğu açılmalıdır');
 
@@ -755,6 +801,9 @@ async function runScenario8() {
       await env.page.keyboard.press('Control+w');
       await new Promise((r) => setTimeout(r, 800));
 
+      const isDestroyed = await isAppOrWindowClosed(env.app);
+      assert.ok(!isDestroyed, 'Kaydedilmemiş sekme varken Ctrl+W ile pencere beklenmedik şekilde kapandı');
+
       const dialogCount = await env.app.evaluate(() => (globalThis).__confirmDialogCount);
       assert.ok(dialogCount >= 1, 'Ctrl+W kapatmasında onay diyaloğu açılmalıdır');
 
@@ -788,6 +837,9 @@ async function runScenario8() {
       const closeBtn = env.page.locator('button[aria-label*="sekmesini kapat"]').first();
       await closeBtn.click({ force: true });
       await new Promise((r) => setTimeout(r, 800));
+
+      const isDestroyed = await isAppOrWindowClosed(env.app);
+      assert.ok(!isDestroyed, 'Kaydedilmemiş sekme varken Sekme X ile pencere beklenmedik şekilde kapandı');
 
       const dialogCount = await env.app.evaluate(() => (globalThis).__confirmDialogCount);
       assert.ok(dialogCount >= 1, 'Sekme X butonunda onay diyaloğu açılmalıdır');
@@ -922,8 +974,13 @@ async function runScenario8() {
     }
   }
 
-  passedCount++;
-  results.push({ name: 'Senaryo 8: Kapatma ve Güvenlik Akışları', status: 'PASS' });
+    passedCount++;
+    results.push({ name: 'Senaryo 8: Kapatma ve Güvenlik Akışları', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 8 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 8: Kapatma ve Güvenlik Akışları', status: 'FAIL', error: err.message });
+  }
 }
 
 // =====================================================================
