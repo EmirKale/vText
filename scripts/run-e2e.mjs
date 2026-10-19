@@ -1091,6 +1091,238 @@ async function runScenario10() {
   }
 }
 
+// =====================================================================
+// SENARYO 11: Gerçek Uyumluluk (Interop): Dış Araç DOCX (LibreOffice GUI & Soffice)
+// =====================================================================
+async function runScenario11() {
+  logSection('SENARYO 11: Gerçek Uyumluluk (Interop): Dış Araç DOCX (LibreOffice GUI & Soffice)');
+  const env = await createTestApp();
+  try {
+    const fixturesDir = path.join(projectRoot, 'tests', 'fixtures');
+    const sofficePath = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    const pyExe = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+    const pyScript = path.join(projectRoot, 'scripts', 'assert-interop-pdf.py');
+
+    // -------------------------------------------------------------
+    // KISIM 1: tests/fixtures/libreoffice-gui-test.docx
+    // -------------------------------------------------------------
+    const loGuiSrc = path.join(fixturesDir, 'libreoffice-gui-test.docx');
+    const loGuiWork = path.join(env.tmpWorkDir, 'lo-gui-work.docx');
+    fs.copyFileSync(loGuiSrc, loGuiWork);
+
+    // Dosyayı vText içinde aç
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+    }, loGuiWork);
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1500);
+
+    // DOM kontrolleri
+    const h1Text = await env.page.locator('.ProseMirror h1').innerText();
+    assert.ok(h1Text.includes('LibreOffice Test Belgesi'), 'Başlık DOM içinde bulunmalıdır');
+
+    const liCount = await env.page.locator('.ProseMirror ol li').count();
+    assert.equal(liCount, 3, 'Numaralı listede tam 3 madde bulunmalıdır');
+
+    const trCount = await env.page.locator('.ProseMirror table tr').count();
+    assert.equal(trCount, 3, 'Tabloda 3 satır bulunmalıdır');
+
+    const thCount = await env.page.locator('.ProseMirror th').count();
+    assert.equal(thCount, 0, 'Başlıksız tabloda ASLA th öğesi oluşmamalıdır');
+
+    // vText içinde kaydet (Ctrl+S)
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    // Kaydedilen DOCX XML Doğrulaması: w:tblHeader ve w:shd OLMAMALIDIR!
+    const savedZip = await JSZip.loadAsync(fs.readFileSync(loGuiWork));
+    const savedXml = await savedZip.file('word/document.xml').async('string');
+    assert.ok(!savedXml.includes('<w:tblHeader'), 'Kaydedilen libreoffice-gui-test.docx içinde w:tblHeader KESİNLİKLE OLMAMALIDIR');
+    assert.ok(!savedXml.includes('w:shd'), 'Kaydedilen libreoffice-gui-test.docx içinde w:shd KESİNLİKLE OLMAMALIDIR');
+
+    // LibreOffice ile PDF'e dönüştür
+    const loGuiPdf = path.join(env.tmpWorkDir, 'lo-gui-work.pdf');
+    execSync(`"${sofficePath}" --headless --convert-to pdf "${loGuiWork}" --outdir "${env.tmpWorkDir}"`);
+    assert.ok(fs.existsSync(loGuiPdf), 'LibreOffice PDF üretmiş olmalıdır');
+
+    // PyMuPDF ile PDF içeriğini doğrula
+    const pyLoOut = execSync(`"${pyExe}" "${pyScript}" "${loGuiPdf}"`).toString();
+    assert.ok(pyLoOut.includes('LibreOffice Test Belgesi'), 'PDF içinde başlık bulunmalıdır');
+    assert.ok(pyLoOut.includes('Birinci adım'), 'PDF içinde liste maddesi bulunmalıdır');
+    assert.ok(pyLoOut.includes('R1C1') && pyLoOut.includes('R3C3'), 'PDF içinde tablo hücreleri bulunmalıdır');
+
+    logPass('libreoffice-gui-test.docx vText roundtrip sonrası başlık, liste ve tabloyu korudu; w:tblHeader ve w:shd içermedi.');
+
+    // -------------------------------------------------------------
+    // KISIM 2: tests/fixtures/interop-source.docx (Zengin Belge)
+    // -------------------------------------------------------------
+    const interopSrc = path.join(fixturesDir, 'interop-source.docx');
+    const interopWork = path.join(env.tmpWorkDir, 'interop-roundtrip.docx');
+    fs.copyFileSync(interopSrc, interopWork);
+
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+    }, interopWork);
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1500);
+
+    // vText içinde kaydet
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    // Kaydedilen interop DOCX XML doğrulaması
+    const interopZip = await JSZip.loadAsync(fs.readFileSync(interopWork));
+    const interopDocXml = await interopZip.file('word/document.xml').async('string');
+
+    // Başlıklar
+    assert.ok(interopDocXml.includes('Interop Başlık 1'), 'Başlık 1 metni korunmalıdır');
+    assert.ok(interopDocXml.includes('Interop Başlık 2'), 'Başlık 2 metni korunmalıdır');
+    assert.ok(interopDocXml.includes('Interop Başlık 3'), 'Başlık 3 metni korunmalıdır');
+
+    // Kalın metin
+    assert.ok(interopDocXml.includes('Kalın metin'), 'Kalın metin korunmalıdır');
+
+    // Tabloları ayır ve başlık durumlarını kontrol et
+    const tables = interopDocXml.match(/<w:tbl\b[\s\S]*?<\/w:tbl>/g) || [];
+    assert.equal(tables.length, 2, 'Belgede 2 tablo bulunmalıdır');
+    const [t1, t2] = tables;
+    assert.ok(t1.includes('<w:tblHeader'), 'İlk tabloda (başlıklı) w:tblHeader bulunmalıdır');
+    assert.ok(t1.includes('w:shd'), 'İlk tabloda w:shd bulunmalıdır');
+    assert.ok(!t2.includes('<w:tblHeader'), 'İkinci tabloda (başlıksız) w:tblHeader OLMAMALIDIR');
+    assert.ok(!t2.includes('w:shd'), 'İkinci tabloda w:shd OLMAMALIDIR');
+
+    // Bağlantı
+    assert.ok(interopDocXml.includes('Örnek Test Bağlantısı'), 'Bağlantı metni korunmalıdır');
+
+    // LibreOffice ile PDF'e dönüştür
+    const interopPdf = path.join(env.tmpWorkDir, 'interop-roundtrip.pdf');
+    execSync(`"${sofficePath}" --headless --convert-to pdf:writer_pdf_Export "${interopWork}" --outdir "${env.tmpWorkDir}"`);
+    assert.ok(fs.existsSync(interopPdf), 'Interop PDF dosyası üretilmiş olmalıdır');
+
+    const pyInteropOut = execSync(`"${pyExe}" "${pyScript}" "${interopPdf}"`).toString();
+    assert.ok(pyInteropOut.includes('Interop Başlık 1'), 'PDF içinde Başlık 1 bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Interop Başlık 2'), 'PDF içinde Başlık 2 bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Interop Başlık 3'), 'PDF içinde Başlık 3 bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Kalın metin'), 'PDF içinde Kalın metin bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Numara 1'), 'PDF içinde liste numaraları bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Başlık Kolon 1'), 'PDF içinde tablo başlığı bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Hücre 1'), 'PDF içinde başlıksız tablo hücresi bulunmalıdır');
+    assert.ok(pyInteropOut.includes('Örnek Test Bağlantısı'), 'PDF içinde bağlantı metni bulunmelidir');
+
+    logPass('interop-source.docx vText roundtrip ve LibreOffice PDF dönüşümünde doğrulandı.');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 11: Gerçek Uyumluluk (Interop) Doğrulaması', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 11 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 11: Gerçek Uyumluluk (Interop) Doğrulaması', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
+// =====================================================================
+// SENARYO 12: Editör Yazı Tipi = Calibri WYSIWYG & PDF Doğrulaması
+// =====================================================================
+async function runScenario12() {
+  logSection('SENARYO 12: Editör Yazı Tipi = Calibri WYSIWYG & PDF Doğrulaması');
+  const env = await createTestApp();
+  try {
+    const pyExe = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+    const pyCheckScript = path.join(projectRoot, 'scripts', 'check-pdf-fonts.py');
+    const screenshotPath = path.join(artifactsDir, 'editor-calibri.png');
+
+    // 1. Editör gövde paragrafının getComputedStyle fontFamily değerini kontrol et
+    const pFontFamily = await env.page.evaluate(() => {
+      const p = document.querySelector('.ProseMirror p');
+      return p ? window.getComputedStyle(p).fontFamily : '';
+    });
+    console.log(`  [CSS Font Family]: "${pFontFamily}"`);
+    assert.ok(
+      pFontFamily.toLowerCase().includes('calibri') || pFontFamily.toLowerCase().includes('carlito'),
+      `Gövde paragrafı fontFamily Calibri veya Carlito içermelidir, bulunan: "${pFontFamily}"`
+    );
+
+    // 2. h1 oluştur ve h1'in font-size oranının gövdeye göre 2.0 (24/12) olduğunu doğrula
+    await env.page.evaluate(() => {
+      const el = document.querySelector('.ProseMirror');
+      el.focus();
+    });
+    await env.page.keyboard.press('Control+a');
+    await env.page.keyboard.press('Backspace');
+    await env.page.waitForTimeout(100);
+
+    // Başlık 1 seç
+    const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
+    await blockBtn.click({ force: true });
+    await env.page.waitForTimeout(150);
+    await env.page.locator('button[role="menuitem"]:has-text("Başlık 1")').click({ force: true });
+    await env.page.waitForTimeout(150);
+
+    await env.page.keyboard.type('Calibri WYSIWYG Başlık 1');
+    await env.page.keyboard.press('Enter');
+
+    // Gövde paragrafı seç
+    await blockBtn.click({ force: true });
+    await env.page.waitForTimeout(150);
+    await env.page.locator('button[role="menuitem"]:has-text("Paragraf")').click({ force: true });
+    await env.page.waitForTimeout(150);
+
+    await env.page.keyboard.type('Bu belge editöründe Calibri yazı tipi 12pt olarak kullanılmaktadır.');
+    await env.page.waitForTimeout(300);
+
+    const sizes = await env.page.evaluate(() => {
+      const h1 = document.querySelector('.ProseMirror h1');
+      const p = document.querySelector('.ProseMirror p');
+      if (!h1 || !p) return null;
+      const h1Px = parseFloat(window.getComputedStyle(h1).fontSize);
+      const pPx = parseFloat(window.getComputedStyle(p).fontSize);
+      return { h1Px, pPx, ratio: h1Px / pPx };
+    });
+
+    assert.ok(sizes, 'h1 ve p öğeleri DOM içinde bulunmalıdır');
+    console.log(`  [Font Boyutları]: h1=${sizes.h1Px}px, p=${sizes.pPx}px, oran=${sizes.ratio}`);
+    assert.ok(
+      Math.abs(sizes.ratio - 2.0) <= 0.05,
+      `h1'in gövdeye göre font-size oranı 2.0 (24pt/12pt) olmalıdır, hesaplanan: ${sizes.ratio}`
+    );
+
+    // 3. Playwright ile tam sayfa ekran görüntüsü al: test-artifacts/editor-calibri.png
+    await env.page.screenshot({ path: screenshotPath, fullPage: true });
+    assert.ok(fs.existsSync(screenshotPath), `Ekran görüntüsü oluşturulmalıdır: ${screenshotPath}`);
+    logPass(`Editör ekran görüntüsü kaydedildi: ${screenshotPath}`);
+
+    // 4. PDF dışa aktar ve PyMuPDF ile gövde fontunun Calibri veya Carlito olduğunu doğrula
+    const pdfExportPath = path.join(env.tmpWorkDir, 'scenario12_calibri.pdf');
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, pdfExportPath);
+
+    await env.page.keyboard.press('Control+Alt+p');
+    await env.page.waitForTimeout(2000);
+
+    assert.ok(fs.existsSync(pdfExportPath), 'PDF dosyası diskte oluşturulmalıdır');
+    const pyFontOut = execSync(`"${pyExe}" "${pyCheckScript}" "${pdfExportPath}"`).toString();
+    console.log(`  [PDF Font İnceleme]:\n${pyFontOut.trim()}`);
+    assert.ok(
+      pyFontOut.includes('CALIBRI_OR_CARLITO_FOUND: True'),
+      'Dışa aktarılan PDF içinde Calibri veya Carlito fontu bulunmalıdır'
+    );
+
+    logPass('Editör ve dışa aktarılan PDF fontunun Calibri/Carlito olduğu, h1/p oranının 2.0 olduğu doğrulandı.');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 12: Editör Yazı Tipi = Calibri WYSIWYG & PDF Doğrulaması', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 12 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 12: Editör Yazı Tipi = Calibri WYSIWYG & PDF Doğrulaması', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
 async function main() {
   console.log(`\n======================================================================`);
   console.log(`vText UÇTAN UCA (E2E) TEST KOŞUSU BAŞLADI`);
@@ -1108,6 +1340,8 @@ async function main() {
   await runScenario8();
   await runScenario9();
   await runScenario10();
+  await runScenario11();
+  await runScenario12();
 
   console.log(`\n======================================================================`);
   console.log(`E2E TEST ÖZETİ: ${passedCount} BAŞARILI, ${failedCount} BAŞARISIZ (Toplam: ${passedCount + failedCount})`);

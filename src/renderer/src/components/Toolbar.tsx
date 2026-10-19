@@ -368,7 +368,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           <div className="menu absolute left-0 top-full mt-2 w-48" role="menu">
             {BLOCK_TYPES.map((b) => (
               <button key={b.id} role="menuitem" onClick={() => setBlock(b.id)} className="menu-item h-9">
-                <span className={`flex-1 font-serif ${b.preview}`}>{b.label}</span>
+                <span className={`flex-1 font-editor ${b.preview}`}>{b.label}</span>
                 {currentBlock === b.id && <Check className="w-3.5 h-3.5 text-accent" />}
               </button>
             ))}

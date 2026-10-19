@@ -16,6 +16,7 @@ import {
   ImageRun,
   LevelFormat
 } from 'docx';
+import { TYPOGRAPHY } from '../../../shared/typography';
 
 export const DOCX_TABLE_BORDER_COLOR = '9CA3AF';
 export const DOCX_TABLE_BORDER_SIZE = 4; // 0.5 pt (in eighths of a point)
@@ -28,7 +29,7 @@ export async function exportTipTapJsonToDocx(
 ): Promise<Uint8Array> {
   const children: any[] = [];
 
-  const DEFAULT_FONT_FALLBACK = 'Calibri';
+  const DEFAULT_FONT_FALLBACK = TYPOGRAPHY.fontFamily.name;
 
   function processMarks(text: string, marks?: any[]): TextRun {
     let bold: boolean | undefined;
@@ -369,9 +370,9 @@ export async function exportTipTapJsonToDocx(
       default: {
         document: {
           run: {
-            font: DEFAULT_FONT_FALLBACK,
-            size: 24, // 12pt
-            color: '1C2523'
+            font: TYPOGRAPHY.fontFamily.name,
+            size: TYPOGRAPHY.body.halfPoints, // 12pt
+            color: TYPOGRAPHY.body.colorHex
           }
         }
       },
@@ -386,7 +387,7 @@ export async function exportTipTapJsonToDocx(
             size: 56, // 28pt
             bold: true,
             color: '111827',
-            font: DEFAULT_FONT_FALLBACK
+            font: TYPOGRAPHY.fontFamily.name
           },
           paragraph: {
             spacing: { before: 320, after: 160 }
@@ -399,13 +400,13 @@ export async function exportTipTapJsonToDocx(
           next: 'Normal',
           quickFormat: true,
           run: {
-            size: 48, // 24pt
+            size: TYPOGRAPHY.h1.halfPoints, // 24pt
             bold: true,
-            color: '111827',
-            font: DEFAULT_FONT_FALLBACK
+            color: TYPOGRAPHY.h1.colorHex,
+            font: TYPOGRAPHY.fontFamily.name
           },
           paragraph: {
-            spacing: { before: 280, after: 140 }
+            spacing: { before: TYPOGRAPHY.h1.spaceBeforeDxa, after: TYPOGRAPHY.h1.spaceAfterDxa }
           }
         },
         {
@@ -415,13 +416,13 @@ export async function exportTipTapJsonToDocx(
           next: 'Normal',
           quickFormat: true,
           run: {
-            size: 36, // 18pt
+            size: TYPOGRAPHY.h2.halfPoints, // 18pt
             bold: true,
-            color: '1F2937',
-            font: DEFAULT_FONT_FALLBACK
+            color: TYPOGRAPHY.h2.colorHex,
+            font: TYPOGRAPHY.fontFamily.name
           },
           paragraph: {
-            spacing: { before: 240, after: 120 }
+            spacing: { before: TYPOGRAPHY.h2.spaceBeforeDxa, after: TYPOGRAPHY.h2.spaceAfterDxa }
           }
         },
         {
@@ -431,13 +432,13 @@ export async function exportTipTapJsonToDocx(
           next: 'Normal',
           quickFormat: true,
           run: {
-            size: 30, // 15pt
+            size: TYPOGRAPHY.h3.halfPoints, // 15pt
             bold: true,
-            color: '374151',
-            font: DEFAULT_FONT_FALLBACK
+            color: TYPOGRAPHY.h3.colorHex,
+            font: TYPOGRAPHY.fontFamily.name
           },
           paragraph: {
-            spacing: { before: 200, after: 100 }
+            spacing: { before: TYPOGRAPHY.h3.spaceBeforeDxa, after: TYPOGRAPHY.h3.spaceAfterDxa }
           }
         },
         {

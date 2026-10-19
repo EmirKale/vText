@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import fs from 'fs';
+import { TYPOGRAPHY } from '../shared/typography';
 
 export async function exportToPdf(htmlContent: string, outputPath: string): Promise<boolean> {
   const printWindow = new BrowserWindow({
@@ -20,24 +21,25 @@ export async function exportToPdf(htmlContent: string, outputPath: string): Prom
       margin: 20mm;
     }
     body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      font-size: 15px;
-      line-height: 1.7;
+      font-family: ${TYPOGRAPHY.fontFamily.stackCss};
+      font-size: ${TYPOGRAPHY.body.pt}pt;
+      line-height: ${TYPOGRAPHY.body.lineHeight};
       color: #1F2937;
       background: #FFFFFF;
       margin: 0;
       padding: 0;
     }
     h1, h2, h3, h4 {
+      font-family: ${TYPOGRAPHY.fontFamily.stackCss};
       color: #111827;
       font-weight: 700;
-      line-height: 1.3;
+      line-height: 1.15;
       page-break-after: avoid;
     }
-    h1 { font-size: 26px; margin-top: 0; margin-bottom: 16px; }
-    h2 { font-size: 20px; margin-top: 24px; margin-bottom: 12px; }
-    h3 { font-size: 17px; margin-top: 20px; margin-bottom: 8px; }
-    p { margin-top: 0; margin-bottom: 14px; }
+    h1 { font-size: ${TYPOGRAPHY.h1.pt}pt; margin-top: ${TYPOGRAPHY.h1.spaceBeforePt}pt; margin-bottom: ${TYPOGRAPHY.h1.spaceAfterPt}pt; }
+    h2 { font-size: ${TYPOGRAPHY.h2.pt}pt; margin-top: ${TYPOGRAPHY.h2.spaceBeforePt}pt; margin-bottom: ${TYPOGRAPHY.h2.spaceAfterPt}pt; }
+    h3 { font-size: ${TYPOGRAPHY.h3.pt}pt; margin-top: ${TYPOGRAPHY.h3.spaceBeforePt}pt; margin-bottom: ${TYPOGRAPHY.h3.spaceAfterPt}pt; }
+    p { margin-top: 0; margin-bottom: ${TYPOGRAPHY.body.spaceAfterPt}pt; }
     blockquote {
       border-left: 4px solid #6366F1;
       padding-left: 16px;

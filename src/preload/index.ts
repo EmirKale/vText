@@ -9,10 +9,11 @@ import {
   UpdateStatusData,
   FileOpenResult,
   FileSaveResult,
-  ShowSaveDialogResult
+  ShowSaveDialogResult,
+  KalemApi
 } from '../shared/types';
 
-export const kalemApi = {
+export const kalemApi: KalemApi = {
   window: {
     setTheme: (isDark: boolean) => ipcRenderer.invoke('window:setTheme', isDark),
     close: (force?: boolean): Promise<boolean> => ipcRenderer.invoke('window:close', force),

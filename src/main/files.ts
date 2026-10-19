@@ -7,6 +7,7 @@ import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } 
 import { convertWithPandocOrLibreOffice } from './convert';
 import { documentRegistry } from './registry';
 import MarkdownIt from 'markdown-it';
+import JSZip from 'jszip';
 
 const md = new MarkdownIt({
   html: true,
@@ -161,6 +162,36 @@ export async function openDroppedFile(filePath: string): Promise<FileOpenResult>
   }
 }
 
+export async function sanitizeDocxTableHeaders(buffer: Buffer): Promise<Buffer> {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const docXmlFile = zip.file('word/document.xml');
+    if (!docXmlFile) return buffer;
+
+    const docXml = await docXmlFile.async('string');
+    // Yalnızca w:val="off" | "false" | "0" olan geçersiz/kapatılmış w:tblHeader öğelerini kaldır
+    // Böylece w:val yok/on/true/1 olanlar mammoth tarafından başlık sayılırken kapatılmış olanlar sayılmaz
+    const sanitizedXml = docXml.replace(/<w:tblHeader\b[^>]*w:val=["'](?:off|false|0)["'][^>]*\/?>/gi, '');
+    if (sanitizedXml !== docXml) {
+      zip.file('word/document.xml', sanitizedXml);
+      return await zip.generateAsync({ type: 'nodebuffer' });
+    }
+    return buffer;
+  } catch {
+    return buffer;
+  }
+}
+
+function preserveDocxTableStructure(docElement: any): any {
+  if (!docElement) return docElement;
+  // Yalnızca iç içe çocukları özyinelemeli ziyaret et
+  // Başlıksız tablonun ilk satırını ZORLA başlık yapma
+  if (Array.isArray(docElement.children)) {
+    docElement.children.forEach(preserveDocxTableStructure);
+  }
+  return docElement;
+}
+
 export async function openFileByPath(filePath: string): Promise<FileOpenResult> {
   try {
     const ext = path.extname(filePath).toLowerCase().replace('.', '') as DocumentFormat;
@@ -189,23 +220,10 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       };
     }
 
-function preserveDocxTableStructure(docElement: any): any {
-  if (!docElement) return docElement;
-  if (docElement.type === 'table' && Array.isArray(docElement.children) && docElement.children.length > 0) {
-    const hasExplicitHeader = docElement.children.some((row: any) => row.isHeader);
-    if (!hasExplicitHeader) {
-      docElement.children[0].isHeader = true;
-    }
-  }
-  if (Array.isArray(docElement.children)) {
-    docElement.children.forEach(preserveDocxTableStructure);
-  }
-  return docElement;
-}
-
     // 2. DOCX (mammoth with B5: ignoreEmptyParagraphs: false)
     if (ext === 'docx') {
-      const buffer = await fs.promises.readFile(filePath);
+      const rawBuffer = await fs.promises.readFile(filePath);
+      const buffer = await sanitizeDocxTableHeaders(rawBuffer);
       const mammothResult = await mammoth.convertToHtml(
         { buffer },
         {
@@ -263,9 +281,11 @@ function preserveDocxTableStructure(docElement: any): any {
       format: ext
     };
   } catch (err: any) {
+    console.error(`[files:openFileByPath] Hata (${filePath}):`, err);
     return {
       success: false,
-      error: err.message || 'Dosya açılırken bir hata oluştu.'
+      error: 'Bu dosya açılamadı. Dosya bozuk, parola korumalı veya desteklenmeyen bir biçimde olabilir.',
+      details: err?.message || String(err)
     };
   }
 }

@@ -164,10 +164,10 @@
 .ProseMirror {
   outline: none;
   min-height: 100%;
-  font-family: theme('fontFamily.serif');
+  font-family: Calibri, Carlito, "Segoe UI", sans-serif;
   font-optical-sizing: auto;
   font-size: 1em;
-  line-height: 1.75;
+  line-height: 1.15;
   color: rgb(var(--ink));
   caret-color: rgb(var(--accent));
   -webkit-font-smoothing: antialiased;
@@ -189,32 +189,30 @@
 .ProseMirror h1,
 .ProseMirror h2,
 .ProseMirror h3 {
-  font-family: theme('fontFamily.serif');
+  font-family: Calibri, Carlito, "Segoe UI", sans-serif;
   color: rgb(var(--ink));
   text-wrap: balance;
+  font-weight: 700;
 }
 .ProseMirror h1 {
-  font-size: 2.15em;
-  font-weight: 600;
+  font-size: 2.0em;
   line-height: 1.15;
   letter-spacing: -0.02em;
-  margin: 0.2em 0 0.6em;
+  margin: 0.6em 0 0.3em;
 }
 .ProseMirror h2 {
   font-size: 1.5em;
-  font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.15;
   letter-spacing: -0.012em;
-  margin: 1.6em 0 0.5em;
+  margin: 0.65em 0 0.3em;
 }
 .ProseMirror h3 {
-  font-size: 1.2em;
-  font-weight: 600;
-  line-height: 1.35;
-  margin: 1.4em 0 0.4em;
+  font-size: 1.25em;
+  line-height: 1.15;
+  margin: 0.65em 0 0.3em;
 }
 
-.ProseMirror p { margin: 0 0 0.9em; text-wrap: pretty; }
+.ProseMirror p { margin: 0 0 0.5em; text-wrap: pretty; }
 
 .ProseMirror strong { font-weight: 650; }
 

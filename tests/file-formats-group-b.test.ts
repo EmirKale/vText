@@ -7,6 +7,7 @@ import { DocumentRegistry } from '../src/main/registry.ts';
 import { saveFile, openFileByPath, decodeTextBuffer } from '../src/main/files.ts';
 import { exportTipTapJsonToDocx } from '../src/renderer/src/io/docxExport.ts';
 import { tipTapJsonToPlainText } from '../src/renderer/src/io/plainText.ts';
+import JSZip from 'jszip';
 
 describe('Grup B: Dosya Formatları ve Kodlama Testleri (B1-B6)', () => {
   let tmpDir: string;
@@ -394,4 +395,187 @@ describe('Grup B: Dosya Formatları ve Kodlama Testleri (B1-B6)', () => {
     assert.equal(openResult.success, true);
     assert.equal(openResult.warning, undefined, 'Beklenmeyen OLE nesne uyarısı olmamalıdır');
   });
+
+  // GRUP 3: TABLO BAŞLIĞI DOĞRULAMASI
+  it('Grup 3: Başlıklı ve başlıksız iki tablolu DOCX round-trip: ilkinde w:tblHeader ve w:shd var, ikincisinde kesinlikle yok', async () => {
+    // 1. İki tablo içeren TipTap belgesi oluştur:
+    // Tablo 1: 1. satır header (th), 2. satır body (td)
+    // Tablo 2: Başlıksız, tüm satırlar body (td)
+    const twoTablesDoc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlık Sütun 1' }] }] },
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlık Sütun 2' }] }] }
+              ]
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Veri 1' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Veri 2' }] }] }
+              ]
+            }
+          ]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Tablolar arası boşluk' }]
+        },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 1-A' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 1-B' }] }] }
+              ]
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 2-A' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 2-B' }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    // 2. İlk dışa aktarma (exportTipTapJsonToDocx)
+    const docxBytes = await exportTipTapJsonToDocx(twoTablesDoc, 'İki Tablo');
+    const docxPath = path.join(tmpDir, 'two_tables.docx');
+    fs.writeFileSync(docxPath, Buffer.from(docxBytes));
+
+    // 3. Dosyayı vText openFileByPath ile aç (mammoth + sanitizeDocxTableHeaders)
+    const openRes = await openFileByPath(docxPath);
+    assert.equal(openRes.success, true);
+    const html = openRes.content!;
+
+    // İlk tablonun <th> ve <thead> içerdiğini, ikinci tablonun ise <th> İÇERMEDİĞİNİ doğrula
+    assert.ok(html.includes('<th><p>Başlık Sütun 1</p></th>'), 'İlk tablo <th> içermelidir');
+    assert.ok(html.includes('<thead>'), 'İlk tablo <thead> içermelidir');
+    assert.ok(!html.includes('Başlıksız Satır 1-A</p></th>'), 'Başlıksız tablo asla <th> içermemelidir');
+    assert.ok(html.includes('<td><p>Başlıksız Satır 1-A</p></td>'), 'Başlıksız tablonun ilk satırı <td> olmalıdır');
+
+    // 4. HTML'den geri TipTap JSON simülasyonu yapıp tekrar dışa aktar (Round-trip)
+    const roundTripDoc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlık Sütun 1' }] }] },
+                { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlık Sütun 2' }] }] }
+              ]
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Veri 1' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Veri 2' }] }] }
+              ]
+            }
+          ]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Tablolar arası boşluk' }]
+        },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 1-A' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 1-B' }] }] }
+              ]
+            },
+            {
+              type: 'tableRow',
+              content: [
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 2-A' }] }] },
+                { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Başlıksız Satır 2-B' }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const finalDocxBytes = await exportTipTapJsonToDocx(roundTripDoc, 'Final İki Tablo');
+    const finalDocxPath = path.join(tmpDir, 'two_tables_roundtrip.docx');
+    fs.writeFileSync(finalDocxPath, Buffer.from(finalDocxBytes));
+
+    // 5. XML İncelemesi: JSZip ile word/document.xml çıkar ve iki tabloyu ayrı ayrı doğrula
+    const zip = await JSZip.loadAsync(Buffer.from(finalDocxBytes));
+    const docXml = await zip.file('word/document.xml')!.async('string');
+
+    // Tabloları ayır
+    const tableMatches = docXml.match(/<w:tbl\b[\s\S]*?<\/w:tbl>/g);
+    assert.equal(tableMatches?.length, 2, 'Belgede tam 2 adet w:tbl bulunmalıdır');
+
+    const [table1Xml, table2Xml] = tableMatches;
+
+    // Tablo 1: Başlıklı tablo doğrulaması
+    assert.ok(table1Xml.includes('<w:tblHeader'), 'İlk tabloda w:tblHeader bulunmalıdır');
+    assert.ok(table1Xml.includes('w:shd'), 'İlk tablonun başlık satırında w:shd bulunmalıdır');
+    // Tablo 2: Başlıksız tablo doğrulaması
+    assert.ok(!table2Xml.includes('<w:tblHeader'), 'İkinci tabloda w:tblHeader KESİNLİKLE OLMAMALIDIR');
+    assert.ok(!table2Xml.includes('w:shd'), 'İkinci tabloda w:shd (başlık gölgesi) KESİNLİKLE OLMAMALIDIR');
+  });
+
+  it('GRUP 4: Bozuk, parola korumalı veya sahte docx dosyalarında kullanıcı dostu Türkçe hata, loglama ve registry sızıntı önleme', async () => {
+    const fixturesDir = path.resolve(__dirname, 'fixtures');
+    const corruptCases = [
+      { name: '0 baytlık .docx', file: path.join(fixturesDir, 'corrupt-zero-byte.docx') },
+      { name: 'ZIP olmayan düz metin .docx', file: path.join(fixturesDir, 'corrupt-plain-text.docx') },
+      { name: 'İkili .doc -> .docx', file: path.join(fixturesDir, 'corrupt-fake-doc.docx') },
+      { name: 'ODT biçimi -> .docx', file: path.join(fixturesDir, 'corrupt-fake-odt.docx') },
+      { name: '~$ kilit dosyası', file: path.join(fixturesDir, '~$corrupt-lock.docx') },
+      { name: 'Bozuk (kesik) ZIP', file: path.join(fixturesDir, 'corrupt-truncated.docx') }
+    ];
+
+    const initialCount = registry.getCount();
+
+    for (const tc of corruptCases) {
+      const res = await openFileByPath(tc.file);
+      assert.equal(res.success, false, `${tc.name} açılmamalıdır`);
+      assert.equal(
+        res.error,
+        'Bu dosya açılamadı. Dosya bozuk, parola korumalı veya desteklenmeyen bir biçimde olabilir.',
+        `${tc.name} standart kullanıcı dostu Türkçe hata mesajını vermelidir`
+      );
+      assert.ok(res.details && res.details.length > 0, `${tc.name} teknik hata detayını içermelidir`);
+      assert.equal(res.docId, undefined, `${tc.name} için docId üretilmemelidir`);
+      assert.equal(registry.getCount(), initialCount, `${tc.name} sonrasında registry'de docId sızıntısı olmamalıdır`);
+    }
+
+    // Geçerli dosyalar açılmalıdır
+    const validGuiTest = path.join(fixturesDir, 'libreoffice-gui-test.docx');
+    const validSoffice = path.join(fixturesDir, 'sample-for-soffice.docx');
+
+    const validRes1 = await openFileByPath(validGuiTest);
+    assert.equal(validRes1.success, true, 'libreoffice-gui-test.docx başarıyla açılmalıdır');
+    assert.ok(validRes1.content && validRes1.content.length > 0);
+    assert.ok(validRes1.docId);
+
+    const validRes2 = await openFileByPath(validSoffice);
+    assert.equal(validRes2.success, true, 'soffice ile üretilmiş geçerli docx başarıyla açılmalıdır');
+    assert.ok(validRes2.content && validRes2.content.length > 0);
+    assert.ok(validRes2.docId);
+  });
 });
+
+

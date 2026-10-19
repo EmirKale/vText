@@ -178,6 +178,9 @@ export const App: React.FC = () => {
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
       addTab(res.title, res.content, res.docId, res.format);
+    } else if (res.error) {
+      const msg = res.details ? `${res.error}\n\nAyrıntı: ${res.details}` : res.error;
+      alert(msg);
     }
   };
 
@@ -391,7 +394,8 @@ export const App: React.FC = () => {
         if (res.success && res.content !== undefined) {
           addTab(res.title, res.content, res.docId, res.format);
         } else if (res.error) {
-          alert(`Dosya açılamadı: ${res.error}`);
+          const msg = res.details ? `${res.error}\n\nAyrıntı: ${res.details}` : res.error;
+          alert(msg);
         }
       }
     }

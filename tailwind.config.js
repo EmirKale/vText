@@ -37,7 +37,8 @@ export default {
       },
       fontFamily: {
         sans: ['Onest', 'Segoe UI Variable', 'Segoe UI', 'system-ui', 'sans-serif'],
-        serif: ['Literata', 'Georgia', 'Cambria', 'serif'],
+        editor: ['Calibri', 'Carlito', 'Segoe UI', 'sans-serif'],
+        serif: ['Calibri', 'Carlito', 'Georgia', 'Cambria', 'serif'],
         mono: ['JetBrains Mono', 'Consolas', 'Courier New', 'monospace']
       },
       fontSize: {

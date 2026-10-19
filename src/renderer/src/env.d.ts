@@ -1,9 +1,9 @@
-import type { kalemApi } from '../../preload/index';
+import type { KalemApi } from '../../shared/types';
 
 declare global {
   interface Window {
-    kalem: typeof kalemApi;
-    vtext: typeof kalemApi;
+    kalem: KalemApi;
+    vtext: KalemApi;
   }
 }
 
