@@ -133,8 +133,15 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
   });
 
   useEffect(() => {
-    if (editor && onEditorReady) {
-      onEditorReady(editor);
+    if (editor) {
+      if (onEditorReady) {
+        onEditorReady(editor);
+      }
+      requestAnimationFrame(() => {
+        if (editor.view?.dom) {
+          (editor.view.dom as HTMLElement).focus({ preventScroll: true });
+        }
+      });
     }
   }, [editor]);
 
@@ -224,10 +231,10 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
           viewMode === 'page' && !isFocusMode
             ? `${pageOrientation === 'landscape' ? 'max-w-[1056px] min-h-[816px]' : 'max-w-[816px] min-h-[1056px]'} ${
                 pageMargin === 'narrow'
-                  ? 'px-[44px] py-[40px]'
+                  ? 'px-[48px] py-[48px]'
                   : pageMargin === 'wide'
-                  ? 'px-[132px] py-[120px]'
-                  : 'px-[88px] py-[80px]'
+                  ? 'px-[144px] py-[144px]'
+                  : 'px-[96px] py-[96px]'
               } bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60`
             : 'max-w-[700px] px-2 py-4'
         }`}

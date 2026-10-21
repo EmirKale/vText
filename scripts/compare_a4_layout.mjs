@@ -27,46 +27,9 @@ const fullText = paragraphs.join('\n\n');
 const wordCount = fullText.split(/\s+/).filter(Boolean).length;
 console.log(`[Metin Üretildi]: Toplam ${wordCount} kelime, ${paragraphs.length} paragraf.`);
 
-// 1. LibreOffice PDF üretimi
-const loHtmlPath = path.join(outDir, 'lo_600words.html');
+// 1. vText'te DOCX ve PDF üretimi (Playwright Electron ile vText içinde aynı metni yazıp kaydet)
 const loDocxPath = path.join(outDir, 'lo_600words.docx');
 const loPdfPath = path.join(outDir, 'lo_600words.pdf');
-
-const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    @page { size: A4; margin: 20mm; }
-    body {
-      font-family: 'Calibri', sans-serif;
-      font-size: 12pt;
-      line-height: 1.15;
-      margin: 20mm;
-      color: #1F2937;
-    }
-    p { margin-top: 0; margin-bottom: 6pt; }
-  </style>
-</head>
-<body>
-${paragraphs.map((p) => `  <p>${p}</p>`).join('\n')}
-</body>
-</html>`;
-
-fs.writeFileSync(loHtmlPath, htmlContent, 'utf-8');
-
-// LibreOffice ile HTML -> PDF
-execFileSync(sofficePath, [
-  '--headless',
-  '--convert-to',
-  'pdf:writer_pdf_Export',
-  '--outdir',
-  outDir,
-  loHtmlPath
-]);
-console.log(`[LibreOffice PDF]: ${loPdfPath} (${fs.statSync(loPdfPath).size} bayt)`);
-
-// 2. vText PDF üretimi (Playwright Electron ile vText içinde aynı metni yazıp Control+Alt+p ile dışa aktar)
 const vtextPdfPath = path.join(outDir, 'vtext_600words.pdf');
 
 console.log('[vText Başlatılıyor]: Electron çalıştırılıyor...');
@@ -84,11 +47,6 @@ const page = await app.firstWindow();
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(1000);
 
-// showSaveDialog mock
-await app.evaluate(({ dialog }, p) => {
-  dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
-}, vtextPdfPath);
-
 // Metni editöre yerleştir
 await page.evaluate((paras) => {
   const el = document.querySelector('.ProseMirror');
@@ -98,13 +56,38 @@ await page.evaluate((paras) => {
 }, paragraphs);
 await page.waitForTimeout(500);
 
-// PDF dışa aktarma (Control+Alt+p)
+// 1. DOCX Kaydet (Ctrl+s)
+await app.evaluate(({ dialog }, p) => {
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+}, loDocxPath);
+
+console.log('[vText DOCX Kaydediliyor]: Control+s...');
+await page.keyboard.press('Control+s');
+await page.waitForTimeout(3000);
+console.log(`[vText DOCX]: ${loDocxPath} (${fs.statSync(loDocxPath).size} bayt)`);
+
+// 2. PDF Dışa Aktar (Control+Alt+p)
+await app.evaluate(({ dialog }, p) => {
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+}, vtextPdfPath);
+
 console.log('[vText PDF Dışa Aktarılıyor]: Control+Alt+p...');
 await page.keyboard.press('Control+Alt+p');
 await page.waitForTimeout(3000);
+console.log(`[vText PDF]: ${vtextPdfPath} (${fs.statSync(vtextPdfPath).size} bayt)`);
 
 await app.close();
-console.log(`[vText PDF]: ${vtextPdfPath} (${fs.statSync(vtextPdfPath).size} bayt)`);
+
+// 3. LibreOffice ile vText DOCX -> PDF
+execFileSync(sofficePath, [
+  '--headless',
+  '--convert-to',
+  'pdf:writer_pdf_Export',
+  '--outdir',
+  outDir,
+  loDocxPath
+]);
+console.log(`[LibreOffice (vText'in DOCX'inden) PDF]: ${loPdfPath} (${fs.statSync(loPdfPath).size} bayt)`);
 
 // 3. Python PyMuPDF ile Karşılaştırma
 const pyScript = `

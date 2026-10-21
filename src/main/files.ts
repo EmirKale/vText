@@ -6,8 +6,14 @@ import mammoth from 'mammoth';
 import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } from '../shared/types';
 import { convertWithPandocOrLibreOffice } from './convert';
 import { documentRegistry, normalizePath } from './registry';
+import {
+  isFileLastWrittenByVText,
+  recordFileSavedByVText,
+  computeBufferSha256
+} from './backupRegistry';
 import MarkdownIt from 'markdown-it';
 import JSZip from 'jszip';
+import { detectUnsupportedDocxFeatures } from './docxFeatureDetector';
 
 const backedUpPaths = new Set<string>();
 
@@ -283,6 +289,8 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
 
       const entry = documentRegistry.register(filePath, ext, title);
       entry.openedFromDisk = true;
+      entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
+      if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
       return {
         success: true,
         docId: entry.docId,
@@ -296,9 +304,10 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     if (ext === 'docx') {
       const rawBuffer = await fs.promises.readFile(filePath);
 
+      let zip: JSZip | null = null;
       // ODT tespit kontrolü: ZIP içinde word/document.xml yoksa ve mimetype ODT ise
       try {
-        const zip = await JSZip.loadAsync(rawBuffer);
+        zip = await JSZip.loadAsync(rawBuffer);
         const hasDocumentXml = !!zip.file('word/document.xml');
         const mimetypeFile = zip.file('mimetype');
         const mimetype = mimetypeFile ? (await mimetypeFile.async('string')).trim() : '';
@@ -326,15 +335,34 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
           transformDocument: preserveDocxStructureAndAlignment
         }
       );
+
+      let unsupportedWarning: string | undefined;
+      let unsupportedFeatures: string[] | undefined;
+      if (zip) {
+        try {
+          const unsupportedInfo = await detectUnsupportedDocxFeatures(zip, mammothResult.messages);
+          if (unsupportedInfo.hasUnsupported) {
+            unsupportedWarning = unsupportedInfo.warningMessage;
+            unsupportedFeatures = unsupportedInfo.features;
+          }
+        } catch (detErr) {
+          console.warn('[files:openFileByPath] Desteklenmeyen öğe tespiti hatası:', detErr);
+        }
+      }
+
       const entry = documentRegistry.register(filePath, 'docx', title);
       entry.openedFromDisk = true;
+      entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
+      if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
       return {
         success: true,
         docId: entry.docId,
         title: entry.title,
         content: normalizeMammothHtml(mammothResult.value),
         format: 'docx',
-        warning: mammothResult.messages.length > 0 ? mammothResult.messages.map((m) => m.message).join('\n') : undefined
+        warning: unsupportedWarning || (mammothResult.messages.length > 0 ? mammothResult.messages.map((m) => m.message).join('\n') : undefined),
+        unsupportedWarning,
+        unsupportedFeatures
       };
     }
 
@@ -353,6 +381,8 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
         );
         const entry = documentRegistry.register(filePath, ext, title);
         entry.openedFromDisk = true;
+        entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
+        if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
         return {
           success: true,
           docId: entry.docId,
@@ -372,6 +402,8 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     const rawContent = await fs.promises.readFile(filePath, 'utf8');
     const entry = documentRegistry.register(filePath, ext, title);
     entry.openedFromDisk = true;
+    entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
+    if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
     return {
       success: true,
       docId: entry.docId,
@@ -517,7 +549,9 @@ export async function saveFile(
   const canonKey = normalizePath(entry.filePath);
   let backupFileName: string | undefined;
 
-  if (entry.openedFromDisk && fs.existsSync(entry.filePath) && !backedUpPaths.has(canonKey)) {
+  const shouldSkipBackup = entry.wasLastSavedByVText === true || backedUpPaths.has(canonKey);
+
+  if (entry.openedFromDisk && fs.existsSync(entry.filePath) && !shouldSkipBackup) {
     const ext = path.extname(entry.filePath);
     const baseName = path.basename(entry.filePath, ext);
 
@@ -595,6 +629,15 @@ export async function saveFile(
     // Atomic replace on same filesystem
     await fs.promises.rename(tempPath, entry.filePath);
     documentRegistry.update(docId, { lastSavedAt: Date.now() });
+
+    try {
+      const writtenBuffer = await fs.promises.readFile(entry.filePath);
+      recordFileSavedByVText(entry.filePath, computeBufferSha256(writtenBuffer));
+      entry.wasLastSavedByVText = true;
+      backedUpPaths.add(canonKey);
+    } catch (regErr) {
+      console.warn('[saveFile] backupRegistry kaydedilemedi:', regErr);
+    }
 
     return {
       success: true,

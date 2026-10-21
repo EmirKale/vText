@@ -8,6 +8,7 @@ export interface DocumentTab {
   isDirty: boolean;
   format: DocumentFormat;
   lastSavedAt?: number;
+  unsupportedWarning?: string;
 }
 
 
@@ -109,6 +110,8 @@ export interface FileOpenResult {
   error?: string;
   details?: string;
   warning?: string;
+  unsupportedWarning?: string;
+  unsupportedFeatures?: string[];
 }
 
 export interface ShowSaveDialogResult {

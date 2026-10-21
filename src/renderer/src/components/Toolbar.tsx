@@ -131,14 +131,39 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   const highlightRef = useRef<HTMLDivElement>(null);
   const [sizeInput, setSizeInput] = useState('');
 
-  useOutside(blockRef, () => setOpenMenu(null), openMenu === 'block');
-  useOutside(insertRef, () => setOpenMenu(null), openMenu === 'insert');
-  useOutside(fontRef, () => setOpenMenu(null), openMenu === 'font');
-  useOutside(sizeRef, () => setOpenMenu(null), openMenu === 'size');
-  useOutside(colorRef, () => setOpenMenu(null), openMenu === 'color');
-  useOutside(highlightRef, () => setOpenMenu(null), openMenu === 'highlight');
-  useOutside(spacingRef, () => setOpenMenu(null), openMenu === 'spacing');
-  useOutside(tableRef, () => setOpenMenu(null), openMenu === 'table');
+  const focusEditor = () => {
+    if (!editor) return;
+    try {
+      editor.commands.focus();
+      if (editor.view?.dom) {
+        (editor.view.dom as HTMLElement).focus({ preventScroll: true });
+      }
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (editor && !editor.isDestroyed) {
+          editor.commands.focus();
+          if (editor.view?.dom) {
+            (editor.view.dom as HTMLElement).focus({ preventScroll: true });
+          }
+        }
+      } catch {}
+    }, 0);
+  };
+
+  const closeMenuAndFocus = () => {
+    setOpenMenu(null);
+    focusEditor();
+  };
+
+  useOutside(blockRef, closeMenuAndFocus, openMenu === 'block');
+  useOutside(insertRef, closeMenuAndFocus, openMenu === 'insert');
+  useOutside(fontRef, closeMenuAndFocus, openMenu === 'font');
+  useOutside(sizeRef, closeMenuAndFocus, openMenu === 'size');
+  useOutside(colorRef, closeMenuAndFocus, openMenu === 'color');
+  useOutside(highlightRef, closeMenuAndFocus, openMenu === 'highlight');
+  useOutside(spacingRef, closeMenuAndFocus, openMenu === 'spacing');
+  useOutside(tableRef, closeMenuAndFocus, openMenu === 'table');
 
   // Sync toolbar menu open state with global store so BubbleMenu hides
   useEffect(() => {
@@ -160,7 +185,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
   if (!editor) return null;
 
-  const chain = () => editor.chain().focus();
+  const chain = () => {
+    focusEditor();
+    return editor.chain().focus();
+  };
 
   const currentBlock =
     editor.isActive('heading', { level: 1 }) ? 'h1'
@@ -172,7 +200,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     if (id === 'p') chain().setParagraph().run();
     else chain().setHeading({ level: Number(id[1]) as 1 | 2 | 3 }).run();
     setOpenMenu(null);
-    setTimeout(() => editor.commands.focus(), 0);
+    focusEditor();
   };
 
   const handleAddImage = () => {
@@ -281,10 +309,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     const n = parseFloat(v);
     if (!isNaN(n) && n >= 1 && n <= 400) (chain() as any).setFontSize(`${n}pt`).run();
     setOpenMenu(null);
-    setTimeout(() => editor.commands.focus(), 0);
+    focusEditor();
   };
 
-  const toggleMenu = (m: typeof openMenu) => setOpenMenu(openMenu === m ? null : m);
+  const toggleMenu = (m: typeof openMenu) => {
+    if (openMenu === m) {
+      setOpenMenu(null);
+      focusEditor();
+    } else {
+      setOpenMenu(m);
+    }
+  };
 
   const handleToggleFormatPainter = () => {
     if (isFormatPainterActive) {
@@ -407,7 +442,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                   if (f.value) chain().setFontFamily(f.value).run();
                   else chain().unsetFontFamily().run();
                   setOpenMenu(null);
-                  setTimeout(() => editor.commands.focus(), 0);
+                  focusEditor();
                 }}
                 className="menu-item h-8"
               >
@@ -461,7 +496,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
               onClick={() => {
                 (chain() as any).unsetFontSize().run();
                 setOpenMenu(null);
-                setTimeout(() => editor.commands.focus(), 0);
+                focusEditor();
               }}
               className="menu-item h-7 text-muted"
             >
@@ -515,8 +550,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           <Swatches
             colors={TEXT_COLORS}
             resetLabel="Otomatik"
-            onReset={() => { chain().unsetColor().run(); setOpenMenu(null); }}
-            onPick={(c) => { chain().setColor(c).run(); setOpenMenu(null); }}
+            onReset={() => { chain().unsetColor().run(); setOpenMenu(null); focusEditor(); }}
+            onPick={(c) => { chain().setColor(c).run(); setOpenMenu(null); focusEditor(); }}
           />
         )}
       </div>
@@ -538,8 +573,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           <Swatches
             colors={HIGHLIGHT_COLORS}
             resetLabel="Renk yok"
-            onReset={() => { chain().unsetHighlight().run(); setOpenMenu(null); }}
-            onPick={(c) => { chain().setHighlight({ color: c }).run(); setOpenMenu(null); }}
+            onReset={() => { chain().unsetHighlight().run(); setOpenMenu(null); focusEditor(); }}
+            onPick={(c) => { chain().setHighlight({ color: c }).run(); setOpenMenu(null); focusEditor(); }}
           />
         )}
       </div>
@@ -602,7 +637,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                   onClick={() => {
                     (chain() as any).setLineHeight(lh).run();
                     setOpenMenu(null);
-                    setTimeout(() => editor.commands.focus(), 0);
+                    focusEditor();
                   }}
                   className="menu-item h-8 tabular-nums"
                 >
@@ -617,7 +652,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
               onClick={() => {
                 (chain() as any).unsetLineHeight().run();
                 setOpenMenu(null);
-                setTimeout(() => editor.commands.focus(), 0);
+                focusEditor();
               }}
               className="menu-item h-8 text-muted"
             >

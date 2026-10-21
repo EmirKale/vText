@@ -16,12 +16,28 @@ export const TYPOGRAPHY = {
     stack: 'Calibri, Carlito, "Segoe UI", sans-serif',
     stackCss: "'Calibri', 'Carlito', 'Segoe UI', sans-serif"
   },
+  page: {
+    size: 'A4',
+    widthMm: 210,
+    heightMm: 297,
+    widthPt: 595.28,
+    heightPt: 841.89,
+    widthDxa: 11906,
+    heightDxa: 16838,
+    // Normal / standard sayfa kenar boşluğu: 25.4mm (1.0 inç / 72 pt / 1440 dxa / 96 px)
+    marginMm: 25.4,
+    marginIn: 1.0,
+    marginPt: 72,
+    marginDxa: 1440,
+    marginPx: 96,
+    marginCss: '25.4mm'
+  },
   body: {
     pt: 12,
     px: 16,
     halfPoints: 24,
-    lineHeight: 1.15,
-    lineSpacingDxa: 276, // 1.15 * 240
+    lineHeight: 1.4, // CSS satır aralığı çarpanı (12pt * 1.4 = 16.8pt pitch, Word/OpenXML 1.15 satır aralığı ile eşleşir)
+    lineSpacingDxa: 276, // 1.15 in Word/OpenXML
     spaceAfterPt: 6,
     spaceAfterDxa: 120,
     spaceAfterEm: '0.5em',

@@ -124,6 +124,8 @@
       "node_modules/**/*",
       "!node_modules/**/*.md",
       "!node_modules/**/*.ts",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.map",
       "!node_modules/**/test/**",
       "!node_modules/**/tests/**",
       "!.agents/**",

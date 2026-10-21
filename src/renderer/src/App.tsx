@@ -18,6 +18,7 @@ import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
 import { tipTapJsonToPlainText } from './io/plainText';
 import { applyTheme } from './lib/theme';
+import { X } from 'lucide-react';
 
 export const App: React.FC = () => {
   const {
@@ -38,7 +39,8 @@ export const App: React.FC = () => {
     updateSettings,
     pageMargin,
     pageOrientation,
-    toggleNavigator
+    toggleNavigator,
+    dismissUnsupportedWarning
   } = useAppStore();
 
   const [editorInstance, setEditorInstance] = useState<any>(null);
@@ -66,7 +68,7 @@ export const App: React.FC = () => {
       // Listen for files opened via Windows file association / double-click
       const unsubscribe = window.kalem.files.onOpenFile((result) => {
         if (result.success && result.content !== undefined) {
-          addTab(result.title, result.content, result.docId, result.format);
+          addTab(result.title, result.content, result.docId, result.format, result.unsupportedWarning);
         }
       });
 
@@ -187,7 +189,7 @@ export const App: React.FC = () => {
     if (!window.kalem) return;
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
-      addTab(res.title, res.content, res.docId, res.format);
+      addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning);
     }
   };
 
@@ -404,7 +406,7 @@ export const App: React.FC = () => {
       if (file && window.kalem) {
         const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
-          addTab(res.title, res.content, res.docId, res.format);
+          addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning);
         }
       }
     }
@@ -429,6 +431,29 @@ export const App: React.FC = () => {
             <div className="no-print absolute top-3 inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
               <div className="pointer-events-auto max-w-full">
                 <Toolbar editor={editorInstance} />
+              </div>
+            </div>
+          )}
+
+          {activeTab?.unsupportedWarning && (
+            <div
+              data-testid="unsupported-features-warning"
+              className="no-print absolute top-14 inset-x-0 z-30 flex justify-center px-4 pointer-events-none"
+            >
+              <div className="pointer-events-auto max-w-2xl w-full bg-amber-50 dark:bg-amber-950/90 border border-amber-300 dark:border-amber-700/60 rounded-xl px-4 py-2.5 shadow-float flex items-center justify-between text-xs text-amber-900 dark:text-amber-200 animate-slide-down">
+                <div className="flex items-center gap-2 pr-2">
+                  <span className="text-base select-none">⚠️</span>
+                  <span className="leading-snug">{activeTab.unsupportedWarning}</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid="dismiss-unsupported-warning"
+                  onClick={() => dismissUnsupportedWarning(activeTab.id)}
+                  className="p-1 rounded-md hover:bg-amber-200/50 dark:hover:bg-amber-800/50 transition-colors text-amber-800 dark:text-amber-300 shrink-0 ml-2"
+                  title="Kapat"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}

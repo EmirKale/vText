@@ -9,7 +9,7 @@ import { registerKalemAssetProtocol, openFileByPath } from './files';
 import { getApiKey } from './keystore';
 
 import { closeCoordinator } from './closeCoordinator';
-import { isValidSmokeTestOutPath } from './smokeValidator';
+import { isValidSmokeTestOutPath, isValidSmokeTestOpenPath } from './smokeValidator';
 import { documentRegistry } from './registry';
 
 (globalThis as any).__documentRegistry = documentRegistry;
@@ -220,6 +220,10 @@ function createWindow(): void {
   const smokeTestOutPath = smokeOutArg ? smokeOutArg.slice('--smoke-test-out='.length) : null;
   const isValidOutPath = isValidSmokeTestOutPath(smokeTestOutPath);
 
+  const smokeOpenArg = process.argv.find((arg) => arg.startsWith('--smoke-test-open='));
+  const smokeTestOpenPath = smokeOpenArg ? smokeOpenArg.slice('--smoke-test-open='.length) : null;
+  const isValidOpenPath = isValidSmokeTestOpenPath(smokeTestOpenPath);
+
   if (isSmokeTest && isValidOutPath && smokeTestOutPath) {
     mainWindow.webContents.on('did-finish-load', async () => {
       try {
@@ -236,11 +240,36 @@ function createWindow(): void {
         `);
         // Only write status and setting keys; NEVER write values (including API keys)
         const settingKeys = settings && typeof settings === 'object' ? Object.keys(settings).sort() : [];
-        const payload = {
-          success: true,
-          settingKeys,
-          timestamp: Date.now()
-        };
+
+        let headingCount = 0;
+        let paragraphCount = 0;
+        let openSuccess = true;
+
+        if (isValidOpenPath && smokeTestOpenPath) {
+          console.log('[SmokeTest] Opening DOCX file:', smokeTestOpenPath);
+          const openResult = await openFileByPath(smokeTestOpenPath);
+          if (openResult.success && openResult.content) {
+            const hMatches = openResult.content.match(/<h[1-6]\b[^>]*>/gi);
+            const pMatches = openResult.content.match(/<(?:p|li)\b[^>]*>/gi);
+            headingCount = hMatches ? hMatches.length : 0;
+            paragraphCount = pMatches ? pMatches.length : 0;
+          } else {
+            openSuccess = false;
+          }
+        }
+
+        const payload: Record<string, any> = (isValidOpenPath && smokeTestOpenPath)
+          ? {
+              success: openSuccess,
+              headingCount,
+              paragraphCount
+            }
+          : {
+              success: openSuccess,
+              settingKeys,
+              timestamp: Date.now()
+            };
+
         fs.writeFileSync(smokeTestOutPath, JSON.stringify(payload, null, 2), 'utf-8');
         console.log('[SmokeTest] Marker file written successfully:', smokeTestOutPath);
         setTimeout(() => {

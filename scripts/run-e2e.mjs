@@ -557,8 +557,6 @@ async function runScenario7() {
       await env.page.waitForTimeout(150);
       await env.page.locator(`button[role="menuitem"]:has-text("${label}")`).click({ force: true });
       await env.page.waitForTimeout(150);
-      await env.page.evaluate(() => document.querySelector('.ProseMirror').focus());
-      await env.page.waitForTimeout(50);
     }
 
     // 1. Başlık 1
@@ -1264,10 +1262,17 @@ async function runScenario12() {
     // 2. h1 oluştur ve h1'in font-size oranının gövdeye göre 2.0 (24/12) olduğunu doğrula
     await env.page.evaluate(() => {
       const el = document.querySelector('.ProseMirror');
-      el.focus();
+      el?.focus();
     });
     await env.page.keyboard.press('Control+a');
     await env.page.keyboard.press('Backspace');
+    await env.page.waitForTimeout(100);
+    // Editör dışı odak simülasyonu: toolbar'a doğrudan tıklayan kullanıcı senaryosu
+    await env.page.evaluate(() => {
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+    });
     await env.page.waitForTimeout(100);
 
     async function selectBlockType(label) {
@@ -1275,18 +1280,34 @@ async function runScenario12() {
       await blockBtn.click({ force: true });
       await env.page.waitForTimeout(100);
       await env.page.locator(`button[role="menuitem"]:has-text("${label}")`).click({ force: true });
-      await env.page.waitForTimeout(100);
-      await env.page.locator('.ProseMirror').focus();
+      await env.page.waitForTimeout(150);
+      const isFocused = await env.page.evaluate(() => document.activeElement?.classList.contains('ProseMirror'));
+      assert.strictEqual(isFocused, true, 'Menü seçimi sonrası odak otomatik olarak ProseMirror editörüne dönmelidir');
     }
 
-    // Başlık 1 seç ve yaz
+    // 1. Başlık 1 seç ve doğrudan klavyeyle yaz
     await selectBlockType('Başlık 1');
     await env.page.keyboard.type('Başlık 1');
     await env.page.keyboard.press('Enter');
 
-    // Gövde paragrafı seç ve yaz
+    // 2. Gövde paragrafı seç ve yaz
     await selectBlockType('Paragraf');
     await env.page.keyboard.type('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.');
+    await env.page.keyboard.press('Enter');
+
+    // 3. Liste düğmesi tıkla ve doğrudan klavyeyle yaz
+    await env.page.locator('button[title="Madde işaretli liste"]').click({ force: true });
+    await env.page.waitForTimeout(100);
+    await env.page.keyboard.type('Liste deneme');
+    await env.page.keyboard.press('Enter');
+    await env.page.keyboard.press('Enter'); // Listeden çık
+
+    // 4. Yazı tipi menüsünden seçim yap ve doğrudan klavyeyle yaz
+    await env.page.locator('button[title="Yazı tipi"]').click({ force: true });
+    await env.page.waitForTimeout(100);
+    await env.page.locator('button[role="menuitem"]:has-text("Arial")').click({ force: true });
+    await env.page.waitForTimeout(100);
+    await env.page.keyboard.type('Arial metin deneme');
     await env.page.waitForTimeout(300);
 
     // Metin tamlığını doğrula (ilk karakterlerin düşmediğini kanıtla)
@@ -1296,6 +1317,8 @@ async function runScenario12() {
       s12Text.includes('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.'),
       `Gövde paragrafı tam metin bulunmalıdır. Bulunan: "${s12Text}"`
     );
+    assert.ok(s12Text.includes('Liste deneme'), `Liste deneme tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
+    assert.ok(s12Text.includes('Arial metin deneme'), `Arial metin deneme tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
 
     const sizes = await env.page.evaluate(() => {
       const h1 = document.querySelector('.ProseMirror h1');
@@ -1629,12 +1652,325 @@ async function runScenario14() {
     assert.deepEqual(backupPrompt.buttons, ['Kaydet', 'İptal']);
     logPass('Salt okunur klasörde "Yedek alınamadı. Yine de kaydetmek istiyor musunuz?" diyaloğu başarıyla doğrulandı.');
 
+    // 14.5. vText'in yazdığı dosyayı kapat-aç-kaydet -> yeni yedek YOK
+    await env.page.keyboard.press('Control+w');
+    await env.page.waitForTimeout(600);
+
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, workingDocx);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1000);
+
+    await env.page.evaluate(() => {
+      document.querySelector('.ProseMirror').focus();
+    });
+    await env.page.keyboard.type(' İkinci oturum düzenlemesi.');
+    await env.page.waitForTimeout(200);
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1200);
+
+    const unexpectedBackup2 = path.join(testSubdir, 'belge (vText öncesi yedek 2).docx');
+    assert.equal(
+      fs.existsSync(unexpectedBackup2),
+      false,
+      'vText tarafından yazılmış dosya kapatılıp tekrar açıldığında yeni yedek üretilmemelidir'
+    );
+    logPass('vText tarafından yazılmış dosya tekrar açılıp kaydedildiğinde gereksiz yedek oluşmadığı doğrulandı.');
+
+    // 14.6. Dosyayı harici bir program değiştirsin -> Yeniden yedek VAR
+    await env.page.keyboard.press('Control+w');
+    await env.page.waitForTimeout(600);
+
+    // Harici değişiklik (başka içerikle üzerine yaz)
+    fs.writeFileSync(workingDocx, fs.readFileSync(sourceFixture));
+
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, workingDocx);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1000);
+
+    await env.page.evaluate(() => {
+      document.querySelector('.ProseMirror').focus();
+    });
+    await env.page.keyboard.type(' Harici değişiklik sonrası vText düzenlemesi.');
+    await env.page.waitForTimeout(200);
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1500);
+
+    assert.equal(
+      fs.existsSync(unexpectedBackup2),
+      true,
+      'Harici program tarafından değiştirilmiş dosya vText ile kaydedilirken YEDEK ALINMALIDIR'
+    );
+    logPass('Harici program tarafından değiştirilen dosya için yeniden yedek alındığı doğrulandı.');
+
     passedCount++;
     results.push({ name: 'Senaryo 14: Orijinal Dosyanın Yedeği (vText Öncesi Yedek)', status: 'PASS' });
   } catch (err) {
     logFail('Senaryo 14 Başarısız', err);
     failedCount++;
     results.push({ name: 'Senaryo 14: Orijinal Dosyanın Yedeği (vText Öncesi Yedek)', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
+// =====================================================================
+// SENARYO 15: LibreOffice Fixture Roundtrip (Ortalanmış Başlık, Emphasis, 3 Seviyeli Liste)
+// =====================================================================
+async function runScenario15() {
+  logSection('SENARYO 15: LibreOffice Fixture Roundtrip (Ortalanmış Başlık, Emphasis, 3 Seviyeli Liste)');
+  const env = await createTestApp();
+  const testSubdir = path.join(env.tmpWorkDir, 'scenario15');
+  fs.mkdirSync(testSubdir, { recursive: true });
+
+  try {
+    const sofficePath = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    const pyExe = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+    const fixturePath = path.join(fixturesDir, 'scenario15-fixture.docx');
+
+    assert.ok(fs.existsSync(fixturePath), 'scenario15-fixture.docx mevcut olmalıdır');
+
+    const workingDocx = path.join(testSubdir, 'roundtrip-s15.docx');
+    fs.copyFileSync(fixturePath, workingDocx);
+
+    // 1. Dosyayı vText ile aç (Ctrl+O)
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, workingDocx);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await env.page.waitForTimeout(1000);
+
+    // Editör içeriğini doğrula
+    const editorHtml = await env.page.locator('.ProseMirror').innerHTML();
+    assert.match(editorHtml, /text-align:\s*center/i, 'Editörde ortalanmış başlık bulunmalıdır');
+    assert.match(editorHtml, /<em>Emphasis/i, 'Editörde Emphasis vurgusu em olarak bulunmalıdır');
+    assert.match(editorHtml, /Madde Seviye Uc/i, 'Editörde 3. seviye liste maddesi bulunmalıdır');
+
+    // 2. vText üzerinden kaydet (Ctrl+S)
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(2000);
+    assert.ok(fs.existsSync(workingDocx), 'vText kaydedilen DOCX dosyası mevcut olmalıdır');
+
+    // 3. LibreOffice ile DOCX -> PDF dönüştür
+    const { execFileSync } = await import('child_process');
+    execFileSync(sofficePath, [
+      '--headless',
+      '--convert-to',
+      'pdf:writer_pdf_Export',
+      '--outdir',
+      testSubdir,
+      workingDocx
+    ]);
+
+    const outPdf = path.join(testSubdir, 'roundtrip-s15.pdf');
+    assert.ok(fs.existsSync(outPdf), 'LibreOffice ile dönüştürülen PDF mevcut olmalıdır');
+
+    // 4. PyMuPDF ile geometri ve tipografi analizi
+    const pyScript = `
+import fitz, json, sys
+doc = fitz.open(sys.argv[1])
+page = doc[0]
+page_width = page.rect.width
+
+heading_span = None
+italic_span = None
+list_spans = {}
+
+d = page.get_text("dict")
+for block in d.get("blocks", []):
+    for line in block.get("lines", []):
+        for span in line.get("spans", []):
+            t = span["text"].strip()
+            if "Ortalanmis Baslik" in t or "Ortalanmış Başlık" in t:
+                heading_span = span
+            if "Emphasis" in t:
+                italic_span = span
+            if "Madde Seviye Bir" in t:
+                list_spans["level1"] = span
+            elif "Madde Seviye Iki" in t or "Madde Seviye İki" in t:
+                list_spans["level2"] = span
+            elif "Madde Seviye Uc" in t or "Madde Seviye Üç" in t:
+                list_spans["level3"] = span
+
+print(json.dumps({
+    "page_width": page_width,
+    "heading": heading_span,
+    "italic": italic_span,
+    "list": list_spans
+}))
+`;
+    const pyOut = execFileSync(pyExe, ['-c', pyScript, outPdf], { encoding: 'utf-8' });
+    const pyData = JSON.parse(pyOut.slice(pyOut.indexOf('{')));
+
+    // a) Başlık ortada (x konumu)
+    assert.ok(pyData.heading, 'PDF içinde başlık span bulunmalıdır');
+    const [hX0, , hX1] = pyData.heading.bbox;
+    const headingCenter = (hX0 + hX1) / 2;
+    const pageCenter = pyData.page_width / 2;
+    const centerOffset = Math.abs(headingCenter - pageCenter);
+    assert.ok(
+      centerOffset <= 35.0,
+      `Başlık sayfa ortasında olmalıdır (offset <= 35pt). Merkez sapması: ${centerOffset.toFixed(2)}pt (başlık merkezi: ${headingCenter.toFixed(2)}, sayfa merkezi: ${pageCenter.toFixed(2)})`
+    );
+    logPass(`Başlık ortada doğrulandı (sapma: ${centerOffset.toFixed(2)} pt).`);
+
+    // b) İtalik font var
+    assert.ok(pyData.italic, 'PDF içinde Emphasis span bulunmalıdır');
+    const fontName = pyData.italic.font || '';
+    const flags = pyData.italic.flags || 0;
+    const isItalic = fontName.toLowerCase().includes('italic') || (flags & 2) !== 0;
+    assert.ok(isItalic, `Emphasis öğesi italik fonta sahip olmalıdır. Font: ${fontName}, Flags: ${flags}`);
+    logPass(`İtalik font doğrulandı: ${fontName} (flags: ${flags}).`);
+
+    // c) Liste girinti seviyeleri 3 farklı x konumunda
+    assert.ok(pyData.list.level1, 'Seviye 1 liste maddesi bulunmalıdır');
+    assert.ok(pyData.list.level2, 'Seviye 2 liste maddesi bulunmalıdır');
+    assert.ok(pyData.list.level3, 'Seviye 3 liste maddesi bulunmalıdır');
+
+    const x1 = pyData.list.level1.bbox[0];
+    const x2 = pyData.list.level2.bbox[0];
+    const x3 = pyData.list.level3.bbox[0];
+
+    assert.ok(
+      x1 < x2 && x2 < x3,
+      `Liste seviyeleri 3 farklı artan x konumunda olmalıdır. Seviye 1: ${x1.toFixed(2)}, Seviye 2: ${x2.toFixed(2)}, Seviye 3: ${x3.toFixed(2)}`
+    );
+    assert.ok(
+      x2 - x1 >= 15 && x3 - x2 >= 15,
+      `Liste seviyeleri arasında belirgin girinti (>= 15pt) olmalıdır. Farklar: ${(x2 - x1).toFixed(2)}pt, ${(x3 - x2).toFixed(2)}pt`
+    );
+    logPass(`3 seviyeli iç içe liste girintileri doğrulandı: x1=${x1.toFixed(1)}, x2=${x2.toFixed(1)}, x3=${x3.toFixed(1)}.`);
+
+    passedCount++;
+    results.push({ name: 'Senaryo 15: LibreOffice Fixture Roundtrip (Ortalanmış Başlık, Emphasis, 3 Seviyeli Liste)', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 15 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 15: LibreOffice Fixture Roundtrip (Ortalanmış Başlık, Emphasis, 3 Seviyeli Liste)', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
+// =====================================================================
+// SENARYO 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu (521 kelime DOCX/PDF)
+// =====================================================================
+async function runScenarioA4Layout() {
+  logSection('SENARYO 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu (521 kelime DOCX vs PDF)');
+  const env = await createTestApp();
+  try {
+    const sofficePath = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    const pyScript = path.resolve(projectRoot, 'scripts', 'analyze_a4_layout.py');
+
+    const paragraphs = [
+      "Kelime işlemciler ve masaüstü yayıncılık sistemleri arasındaki en kritik köprü, metnin ekrandaki görünümü ile fiziki kağıt çıktısı arasındaki geometrik uyumdur. Dijital ortamda hazırlanan bir belgenin, A4 standardındaki sayfa sınırları içinde nasıl konumlandığı, satır sonlarının nerede kırıldığı ve paragraflar arası düşey boşlukların nasıl hesaplandığı tipografik sadakatin temel göstergelerinden biridir. Gelişmiş belge motorları, gliflerin genişliklerini, harf aralıklarını ve satır yüksekliği katsayılarını piksel ya da nokta düzeyinde işleyerek yazıcılara veya PDF oluşturucularına iletir. Bu süreçte karşılaşılan en büyük zorluklardan biri, farklı motorların yazı tipi rasterleştirme ve metin dizgileme algoritmalarındaki ince ayrımlardır. Bir motorun tercih ettiği satır sonu kırma mantığı, diğer bir motorda bir kelimenin bir sonraki satıra sarkmasına neden olabilir. Bu sarkma, sayfa sonuna gelindiğinde tüm paragraf bloklarının kaymasına ve sayfa sayısının beklenmedik şekilde değişmesine yol açabilir.",
+      "Calibri yazı tipi, modern ofis belgelerinde yaygın olarak kullanılan hümanist bir sans-serif yazı tipidir. Açık ve yuvarlak hatları, ekran okunabilirliğini artırırken baskı süreçlerinde de dengeli bir mürekkep dağılımı sağlar. 12 punto gövde metni boyutu, standart bir A4 sayfasında yaklaşık olarak 65 ila 75 karakterlik ideal satır genişliğine tekabül eder. Bu genişlik, insan gözünün satır takibini yorulmadan sürdürebilmesi açısından ergonomik bir standart olarak kabul edilmiştir. Paragraf aralarındaki 6 puntoluk boşluk ise, paragrafları birbirinden net biçimde ayırırken sayfanın bütünsel dikey ritmini korumaya yardımcı olur. Metin akışı sırasında satır aralığı katsayısının 1.15 olarak belirlenmesi, harf satırlarının birbirine temas etmesini önler ve beyaz alan dengesini kurar. Ancak bu katsayıların uygulanışında, CSS tabanlı web tarayıcı motorları ile masaüstü ofis paketleri arasında hesaplama farkları görülebilmektedir.",
+      "Chromium motoru, web standartlarına uygun olarak tasarlanmış olup metinleri CSS kutu modeline göre konumlandırır. Yazı tipi metrikleri doğrudan font dosyasından okunurken, satır kutusunun yüksekliği fontun ascent, descent ve line-gap değerlerinin toplamı üzerinden CSS çarpanıyla belirlenir. Baskı emülasyonunda Chromium, sayfayı A4 boyutunda (210 milimetreye 297 milimetre) piksellere dönüştürür ve 20 milimetrelik sayfa kenar boşluklarını düşerek kalan kullanılabilir alana metni yerleştirir. Bu yerleştirme sırasında tarayıcının harf aralığı sıkıştırma veya esnetme algoritmaları, metnin iki yana yaslı olmadığı durumlarda dahi mikroskobik düzeyde farklılıklar üretebilir. Bu durum, tamamen aynı metin ve aynı yazı tipi kullanılsa bile satır sonlarındaki kelime dizilimini etkileyebilecek niteliktedir.",
+      "LibreOffice ve benzeri geleneksel ofis yazılımları ise kendi özel mizanpaj motorlarını kullanır. OpenDocument ve OpenXML standartlarını temel alan bu motorlar, karakter genişliklerini doğrudan işletim sisteminin yazı tipi alt sisteminden (örneğin Windows GDI veya DirectWrite) talep eder. Paragraf özellikleri, satır yüksekliği ve kenar boşlukları milimetre veya punto cinsinden mutlak koordinatlarla sayfaya çizilir. Sayfa sonu kırma algoritmaları, yetim ve dul satır koruma kuralları ile desteklenerek metnin sayfa sınırlarında estetik bir şekilde bölünmesini sağlar. PDF dışa aktarımında LibreOffice, vektörel glif yollarını ve metin bloklarını doğrudan PDF operatörleri olarak kodlar. Bu yaklaşım, dokümanın orijinal ofis görünümüyle azami örtüşmesini garanti altına alır.",
+      "Sonuç olarak, web tabanlı bir kelime işlemci olan vText'in ürettiği PDF ile LibreOffice'in ürettiği PDF karşılaştırıldığında, temel tipografik unsurların ne ölçüde örtüştüğü matematiksel verilerle sınanmalıdır. Her iki motorun A4 sayfa ebadı, 20 milimetre kenar boşlukları ve Calibri 12 punto ayarları altında kaç sayfa ürettiği, sayfa başına kaç satır düştüğü ve toplam satır sayısındaki sapmalar açıkça ortaya konmalıdır. İddiaların soyut söylemler yerine somut ölçüm sonuçlarına dayanması, yazılım mühendisliğinin temel ilkelerinden biridir. Bu deney, iki farklı render mimarisinin sınırlarını ve örtüşme derecesini tarafsız bir şekilde belgelemektedir."
+    ];
+
+    const outDir = path.resolve(projectRoot, 'test-artifacts', 'a4_comparison');
+    fs.mkdirSync(outDir, { recursive: true });
+
+    const loDocx = path.join(outDir, 'lo_600words.docx');
+    const loPdf = path.join(outDir, 'lo_600words.pdf');
+    const vtPdf = path.join(outDir, 'vtext_600words.pdf');
+
+    // Metni yerleştir
+    await env.page.evaluate((paras) => {
+      const el = document.querySelector('.ProseMirror');
+      if (el) {
+        el.innerHTML = paras.map((p) => `<p>${p}</p>`).join('');
+      }
+    }, paragraphs);
+    await env.page.waitForTimeout(500);
+
+    // 1. DOCX Kaydet
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, loDocx);
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(2500);
+    assert.ok(fs.existsSync(loDocx), 'vText DOCX dosyası kaydedilmelidir');
+
+    // 2. PDF Dışa Aktar
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, vtPdf);
+    await env.page.keyboard.press('Control+Alt+p');
+    await env.page.waitForTimeout(2500);
+    assert.ok(fs.existsSync(vtPdf), 'vText PDF dosyası kaydedilmelidir');
+
+    // 3. LibreOffice ile DOCX -> PDF
+    const { execFileSync } = await import('child_process');
+    execFileSync(sofficePath, [
+      '--headless',
+      '--convert-to',
+      'pdf:writer_pdf_Export',
+      '--outdir',
+      outDir,
+      loDocx
+    ]);
+    assert.ok(fs.existsSync(loPdf), 'LibreOffice PDF üretmelidir');
+
+    // 4. PyMuPDF ile Karşılaştır
+    const pyExe = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+    const pyOutput = execFileSync(pyExe, [pyScript], { encoding: 'utf-8' });
+    const jsonStr = pyOutput.slice(pyOutput.indexOf('{'));
+    const analysis = JSON.parse(jsonStr);
+
+    const lo = analysis.libreoffice;
+    const vt = analysis.vtext;
+
+    console.log(`  LibreOffice: ${lo.page_count} sayfa, ${lo.total_lines} satır`);
+    console.log(`  vText:       ${vt.page_count} sayfa, ${vt.total_lines} satır`);
+
+    // Assertion 1: Sayfa sayısı eşit olmalıdır
+    assert.equal(vt.page_count, lo.page_count, `Sayfa sayısı eşit olmalıdır. vText: ${vt.page_count}, LibreOffice: ${lo.page_count}`);
+
+    // Assertion 2: Toplam satır farkı <= %5
+    const lineDiff = Math.abs(vt.total_lines - lo.total_lines);
+    const lineDiffPct = (lineDiff / lo.total_lines) * 100;
+    assert.ok(
+      lineDiffPct <= 5.0,
+      `Toplam satır farkı %5'ten küçük veya eşit olmalıdır. Fark: ${lineDiff} satır (%${lineDiffPct.toFixed(2)})`
+    );
+
+    // Assertion 3: Sayfa başına satır farkı <= 2
+    for (let i = 0; i < lo.pages.length; i++) {
+      const pageDiff = Math.abs(vt.pages[i].line_count - lo.pages[i].line_count);
+      assert.ok(
+        pageDiff <= 2,
+        `Sayfa ${i + 1} satır farkı ±2 aralığında olmalıdır. vText: ${vt.pages[i].line_count}, LO: ${lo.pages[i].line_count}`
+      );
+    }
+
+    logPass(`A4 mizanpaj uyumu doğrulandı: Sayfa sayısı eşit (${vt.page_count}), satır farkı ${lineDiff} (%${lineDiffPct.toFixed(2)} <= %5), sayfa başına sapma <= 2.`);
+    passedCount++;
+    results.push({ name: 'Senaryo 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 16 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu', status: 'FAIL', error: err.message });
   } finally {
     await env.cleanup();
   }
@@ -1662,7 +1998,9 @@ async function main() {
     { num: '11', fn: runScenario11 },
     { num: '12', fn: runScenario12 },
     { num: '13', fn: runScenario13 },
-    { num: '14', fn: runScenario14 }
+    { num: '14', fn: runScenario14 },
+    { num: '15', fn: runScenario15 },
+    { num: '16', fn: runScenarioA4Layout }
   ];
 
   for (const s of allScenarios) {

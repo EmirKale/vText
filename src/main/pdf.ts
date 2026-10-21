@@ -18,7 +18,7 @@ export async function exportToPdf(htmlContent: string, outputPath: string): Prom
   <style>
     @page {
       size: A4;
-      margin: 20mm;
+      margin: ${TYPOGRAPHY.page.marginCss};
     }
     body {
       font-family: ${TYPOGRAPHY.fontFamily.stackCss};
@@ -111,10 +111,10 @@ export async function exportToPdf(htmlContent: string, outputPath: string): Prom
       printBackground: true,
       margins: {
         marginType: 'custom',
-        top: 0.8,
-        bottom: 0.8,
-        left: 0.8,
-        right: 0.8
+        top: TYPOGRAPHY.page.marginIn,
+        bottom: TYPOGRAPHY.page.marginIn,
+        left: TYPOGRAPHY.page.marginIn,
+        right: TYPOGRAPHY.page.marginIn
       }
     });
 

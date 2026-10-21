@@ -334,7 +334,7 @@ export async function exportTipTapJsonToDocx(
   }
 
   const marginDxa =
-    options?.margin === 'narrow' ? 720 : options?.margin === 'wide' ? 2880 : 1440;
+    options?.margin === 'narrow' ? 720 : options?.margin === 'wide' ? 2880 : TYPOGRAPHY.page.marginDxa;
   const isLandscape = options?.orientation === 'landscape';
 
   const doc = new Document({
@@ -545,8 +545,8 @@ export async function exportTipTapJsonToDocx(
           page: {
             size: {
               orientation: isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
-              width: isLandscape ? 16838 : 11906,
-              height: isLandscape ? 11906 : 16838
+              width: isLandscape ? TYPOGRAPHY.page.heightDxa : TYPOGRAPHY.page.widthDxa,
+              height: isLandscape ? TYPOGRAPHY.page.widthDxa : TYPOGRAPHY.page.heightDxa
             },
             margin: {
               top: marginDxa,

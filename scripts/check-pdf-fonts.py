@@ -1,6 +1,9 @@
 import fitz
 import sys
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 if len(sys.argv) < 2:
     print("Usage: python check-pdf-fonts.py <pdf-path>")
     sys.exit(1)

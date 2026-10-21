@@ -11,6 +11,7 @@ export interface DocumentEntry {
   registeredAt: number;
   lastSavedAt?: number;
   openedFromDisk?: boolean;
+  wasLastSavedByVText?: boolean;
 }
 
 /**
