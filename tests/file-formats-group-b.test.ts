@@ -552,10 +552,13 @@ describe('Grup B: Dosya Formatları ve Kodlama Testleri (B1-B6)', () => {
     for (const tc of corruptCases) {
       const res = await openFileByPath(tc.file);
       assert.equal(res.success, false, `${tc.name} açılmamalıdır`);
+      const expectedError = tc.name === 'ODT biçimi -> .docx'
+        ? 'Bu dosya aslında bir ODT belgesi (uzantısı .docx yapılmış). LibreOffice\'te Farklı Kaydet > Word 2007-365 (.docx) ile kaydedip tekrar deneyin.'
+        : 'Bu dosya açılamadı. Dosya bozuk, parola korumalı veya desteklenmeyen bir biçimde olabilir.';
       assert.equal(
         res.error,
-        'Bu dosya açılamadı. Dosya bozuk, parola korumalı veya desteklenmeyen bir biçimde olabilir.',
-        `${tc.name} standart kullanıcı dostu Türkçe hata mesajını vermelidir`
+        expectedError,
+        `${tc.name} beklenen kullanıcı dostu Türkçe hata mesajını vermelidir`
       );
       assert.ok(res.details && res.details.length > 0, `${tc.name} teknik hata detayını içermelidir`);
       assert.equal(res.docId, undefined, `${tc.name} için docId üretilmemelidir`);

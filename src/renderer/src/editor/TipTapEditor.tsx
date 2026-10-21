@@ -101,6 +101,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
       PageBreak,
       Indent,
     ],
+    autofocus: 'end',
     content,
     editorProps: {
       attributes: {
@@ -135,7 +136,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
     if (editor && onEditorReady) {
       onEditorReady(editor);
     }
-  }, [editor, onEditorReady]);
+  }, [editor]);
 
   // Sync content when active tab changes or content is updated externally (e.g., translation streaming)
   useEffect(() => {

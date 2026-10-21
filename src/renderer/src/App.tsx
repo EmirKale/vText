@@ -43,6 +43,16 @@ export const App: React.FC = () => {
 
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [findMode, setFindMode] = useState<null | 'find' | 'replace'>(null);
+  const [backupNotification, setBackupNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!backupNotification) return;
+    const timer = setTimeout(() => {
+      setBackupNotification(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [backupNotification]);
+
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
   // Initialize settings and open-file listener
@@ -178,9 +188,6 @@ export const App: React.FC = () => {
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
       addTab(res.title, res.content, res.docId, res.format);
-    } else if (res.error) {
-      const msg = res.details ? `${res.error}\n\nAyrıntı: ${res.details}` : res.error;
-      alert(msg);
     }
   };
 
@@ -271,9 +278,14 @@ export const App: React.FC = () => {
           isDirty: false,
           lastSavedAt: Date.now()
         });
+        if (saveRes.backupFileName) {
+          setBackupNotification(`Orijinal dosya yedeklendi: ${saveRes.backupFileName}`);
+        }
         return true;
       } else if (saveRes && saveRes.error) {
-        alert(`Kaydetme hatası: ${saveRes.error}`);
+        if (saveRes.errorCode !== 'ERR_BACKUP_CANCELLED') {
+          alert(`Kaydetme hatası: ${saveRes.error}`);
+        }
         return false;
       }
       return false;
@@ -393,9 +405,6 @@ export const App: React.FC = () => {
         const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
           addTab(res.title, res.content, res.docId, res.format);
-        } else if (res.error) {
-          const msg = res.details ? `${res.error}\n\nAyrıntı: ${res.details}` : res.error;
-          alert(msg);
         }
       }
     }
@@ -467,6 +476,15 @@ export const App: React.FC = () => {
         <UpdateNotification />
         <SpecialCharactersModal editor={editorInstance} />
         <DocumentStatisticsModal content={activeTab.content} />
+        {backupNotification && (
+          <div
+            data-testid="backup-toast"
+            className="fixed bottom-10 right-6 z-50 bg-paper/95 dark:bg-panel border border-border/80 shadow-lg rounded-md px-4 py-2.5 text-xs text-ink flex items-center gap-2 pointer-events-none transition-all duration-200"
+          >
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            <span>{backupNotification}</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -98,6 +98,39 @@ export async function exportTipTapJsonToDocx(
     return !isNaN(n) && n > 0 ? Math.round(n * 240) : fallback;
   }
 
+  function convertList(listNode: any, currentLevel: number = 0): any[] {
+    const isBullet = listNode.type === 'bulletList';
+    const listItems: any[] = [];
+    const items = listNode.content || [];
+
+    items.forEach((item: any, idx: number) => {
+      const isLastItem = idx === items.length - 1;
+      const subNodes = item.content || [];
+
+      subNodes.forEach((subNode: any, subIdx: number) => {
+        const isLastSub = subIdx === subNodes.length - 1;
+
+        if (subNode.type === 'bulletList' || subNode.type === 'orderedList') {
+          listItems.push(...convertList(subNode, currentLevel + 1));
+        } else {
+          const runs = (subNode.content || []).map((c: any) => processMarks(c.text, c.marks));
+          listItems.push(
+            new Paragraph({
+              children: runs.length > 0 ? runs : [new TextRun('')],
+              bullet: isBullet ? { level: Math.min(currentLevel, 5) } : undefined,
+              numbering: !isBullet
+                ? { reference: 'numbered-list', level: Math.min(currentLevel, 5) }
+                : undefined,
+              spacing: { after: isLastItem && isLastSub ? 160 : 80 }
+            })
+          );
+        }
+      });
+    });
+
+    return listItems;
+  }
+
   function convertNode(node: any): any {
     switch (node.type) {
       case 'pageBreak':
@@ -236,25 +269,7 @@ export async function exportTipTapJsonToDocx(
 
       case 'bulletList':
       case 'orderedList': {
-        const listItems: any[] = [];
-        const items = node.content || [];
-        items.forEach((item: any, idx: number) => {
-          const isLastItem = idx === items.length - 1;
-          const subNodes = item.content || [];
-          subNodes.forEach((subNode: any, subIdx: number) => {
-            const isLastSub = subIdx === subNodes.length - 1;
-            const runs = (subNode.content || []).map((c: any) => processMarks(c.text, c.marks));
-            listItems.push(
-              new Paragraph({
-                children: runs,
-                bullet: node.type === 'bulletList' ? { level: 0 } : undefined,
-                numbering: node.type === 'orderedList' ? { reference: 'numbered-list', level: 0 } : undefined,
-                spacing: { after: isLastItem && isLastSub ? 160 : 80 }
-              })
-            );
-          });
-        });
-        return listItems;
+        return convertList(node, 0);
       }
 
       case 'table': {
@@ -359,6 +374,39 @@ export async function exportTipTapJsonToDocx(
               style: {
                 paragraph: {
                   indent: { left: 2160, hanging: 360 }
+                }
+              }
+            },
+            {
+              level: 3,
+              format: LevelFormat.DECIMAL,
+              text: '%4.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 2880, hanging: 360 }
+                }
+              }
+            },
+            {
+              level: 4,
+              format: LevelFormat.LOWER_LETTER,
+              text: '%5.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 3600, hanging: 360 }
+                }
+              }
+            },
+            {
+              level: 5,
+              format: LevelFormat.LOWER_ROMAN,
+              text: '%6.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 4320, hanging: 360 }
                 }
               }
             }

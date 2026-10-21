@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { DocumentRegistry } from '../src/main/registry.ts';
-import { saveFile, openFileByPath } from '../src/main/files.ts';
+import { saveFile, openFileByPath, resetBackupTracker } from '../src/main/files.ts';
 import { exportTipTapJsonToDocx } from '../src/renderer/src/io/docxExport.ts';
 import { tipTapJsonToMarkdown } from '../src/renderer/src/io/markdown.ts';
 import { SaveFileSchema, validateIpc } from '../src/main/ipcSchemas.ts';
@@ -17,10 +17,12 @@ describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vtext-flow-test-'));
     registry = DocumentRegistry.getInstance();
     registry.clear();
+    resetBackupTracker();
   });
 
   afterEach(() => {
     registry.clear();
+    resetBackupTracker();
     if (fs.existsSync(tmpDir)) {
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -210,5 +212,86 @@ describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
     // Metin (string) testi
     const resStr = validateIpc(SaveFileSchema, { docId: validDocId, content: '# Markdown İçerik' });
     assert.equal(resStr.success, true);
+  });
+
+  describe('GRUP 4: Orijinal Dosyanın Yedeği (vText öncesi yedek)', () => {
+    it('Diskten açılan dosya ilk kez kaydedildiğinde orijinalin bayt bayt yedeği alınmalı, ikinci kayıtta yeni yedek üretilmemelidir', async () => {
+      // 1. Orijinal dosyayı diske yaz
+      const originalPath = path.join(tmpDir, 'orijinal_belge.md');
+      const originalContent = '# Orijinal Başlık\nBu orijinal içeriktir.';
+      fs.writeFileSync(originalPath, originalContent, 'utf8');
+      const originalBytes = fs.readFileSync(originalPath);
+
+      // 2. openFileByPath ile aç (openedFromDisk: true)
+      const openRes = await openFileByPath(originalPath);
+      assert.equal(openRes.success, true);
+      assert.ok(openRes.docId);
+
+      // 3. İlk kez kaydet (içeriği değiştir)
+      const newContent = '# Değiştirilmiş Başlık\nvText tarafından güncellendi.';
+      const saveRes1 = await saveFile(openRes.docId!, newContent);
+      assert.equal(saveRes1.success, true);
+
+      // Beklenen yedek dosyası: "orijinal_belge (vText öncesi yedek).md"
+      const expectedBackupName = 'orijinal_belge (vText öncesi yedek).md';
+      const expectedBackupPath = path.join(tmpDir, expectedBackupName);
+
+      assert.equal(saveRes1.backupFileName, expectedBackupName);
+      assert.equal(fs.existsSync(expectedBackupPath), true, 'Yedek dosyası oluşturulmalıdır');
+
+      // Yedek dosyasının bayt bayt orijinalle eşit olduğunu doğrula
+      const backupBytes = fs.readFileSync(expectedBackupPath);
+      assert.equal(Buffer.compare(originalBytes, backupBytes), 0, 'Yedek dosya yazmadan ÖNCEKİ orijinal dosya ile bayt bayt eşit olmalıdır');
+
+      // Orijinal dosyanın ise yeni içerikle güncellendiğini doğrula
+      const currentBytes = fs.readFileSync(originalPath);
+      assert.notEqual(Buffer.compare(originalBytes, currentBytes), 0);
+      assert.match(fs.readFileSync(originalPath, 'utf8'), /Değiştirilmiş Başlık/);
+
+      // 4. İkinci kez kaydet (aynı oturumda): yeni yedek ÜRETİLMEMELİDİR
+      const saveRes2 = await saveFile(openRes.docId!, '# İkinci Güncelleme\nYine kaydedildi.');
+      assert.equal(saveRes2.success, true);
+      assert.equal(saveRes2.backupFileName, undefined, 'İkinci kayıtta yeni yedek üretilmemelidir');
+
+      // İkinci bir yedek dosyası oluşmadığını doğrula
+      const secondBackupPath = path.join(tmpDir, 'orijinal_belge (vText öncesi yedek 2).md');
+      assert.equal(fs.existsSync(secondBackupPath), false, 'İkinci yedek dosyası bulunmamalıdır');
+    });
+
+    it('Diskten açılmamış yeni belgede yedek dosyası oluşturulmamalıdır', async () => {
+      // Yeni belge diske daha önce kaydedilmemiş, showSaveFilePicker ile yeni bir yol verilmiş gibi register edilir
+      const newDocPath = path.join(tmpDir, 'yeni_olusturulan.md');
+      const entry = registry.register(newDocPath, 'md', 'yeni_olusturulan.md');
+      // entry.openedFromDisk tanımsız/false
+
+      const saveRes = await saveFile(entry.docId, '# Yepyeni Belge');
+      assert.equal(saveRes.success, true);
+      assert.equal(saveRes.backupFileName, undefined, 'Yeni belgede yedek dosyası oluşturulmamalıdır');
+
+      const backupPath = path.join(tmpDir, 'yeni_olusturulan (vText öncesi yedek).md');
+      assert.equal(fs.existsSync(backupPath), false, 'Yeni belgenin yedeği olamaz');
+    });
+
+    it('Aynı adlı yedek varsa sayı eklenerek üzerine yazılmamalıdır (COPYFILE_EXCL)', async () => {
+      const originalPath = path.join(tmpDir, 'cakisma_belge.md');
+      fs.writeFileSync(originalPath, 'Orijinal içerik', 'utf8');
+
+      // Önceden oluşturulmuş bir yedek dosyası yerleştir
+      const firstBackupPath = path.join(tmpDir, 'cakisma_belge (vText öncesi yedek).md');
+      fs.writeFileSync(firstBackupPath, 'Eski yedek içeriği', 'utf8');
+
+      // Dosyayı aç ve kaydet
+      const openRes = await openFileByPath(originalPath);
+      const saveRes = await saveFile(openRes.docId!, 'Yeni içerik');
+
+      assert.equal(saveRes.success, true);
+      assert.equal(saveRes.backupFileName, 'cakisma_belge (vText öncesi yedek 2).md');
+
+      // Eski yedeğin bozulmadığını ve yeni numaralı yedeğin oluştuğunu doğrula
+      assert.equal(fs.readFileSync(firstBackupPath, 'utf8'), 'Eski yedek içeriği');
+      const secondBackupPath = path.join(tmpDir, 'cakisma_belge (vText öncesi yedek 2).md');
+      assert.equal(fs.existsSync(secondBackupPath), true);
+      assert.equal(fs.readFileSync(secondBackupPath, 'utf8'), 'Orijinal içerik');
+    });
   });
 });

@@ -172,6 +172,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     if (id === 'p') chain().setParagraph().run();
     else chain().setHeading({ level: Number(id[1]) as 1 | 2 | 3 }).run();
     setOpenMenu(null);
+    setTimeout(() => editor.commands.focus(), 0);
   };
 
   const handleAddImage = () => {
@@ -280,6 +281,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     const n = parseFloat(v);
     if (!isNaN(n) && n >= 1 && n <= 400) (chain() as any).setFontSize(`${n}pt`).run();
     setOpenMenu(null);
+    setTimeout(() => editor.commands.focus(), 0);
   };
 
   const toggleMenu = (m: typeof openMenu) => setOpenMenu(openMenu === m ? null : m);
@@ -318,7 +320,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     resetLabel
   }) => (
     <div className="menu absolute left-0 top-full mt-2 p-2 w-[188px]" role="menu">
-      <button onClick={onReset} className="menu-item h-8 mb-1.5 text-ui">
+      <button onMouseDown={(e) => e.preventDefault()} onClick={onReset} className="menu-item h-8 mb-1.5 text-ui">
         {resetLabel}
       </button>
       <div className="grid grid-cols-6 gap-1.5">
@@ -367,7 +369,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
         {openMenu === 'block' && (
           <div className="menu absolute left-0 top-full mt-2 w-48" role="menu">
             {BLOCK_TYPES.map((b) => (
-              <button key={b.id} role="menuitem" onClick={() => setBlock(b.id)} className="menu-item h-9">
+              <button key={b.id} role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => setBlock(b.id)} className="menu-item h-9">
                 <span className={`flex-1 font-editor ${b.preview}`}>{b.label}</span>
                 {currentBlock === b.id && <Check className="w-3.5 h-3.5 text-accent" />}
               </button>
@@ -400,10 +402,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
               <button
                 key={f.label}
                 role="menuitem"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   if (f.value) chain().setFontFamily(f.value).run();
                   else chain().unsetFontFamily().run();
                   setOpenMenu(null);
+                  setTimeout(() => editor.commands.focus(), 0);
                 }}
                 className="menu-item h-8"
               >
@@ -451,7 +455,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
         </div>
         {openMenu === 'size' && (
           <div className="menu absolute left-0 top-full mt-2 w-20 max-h-72 overflow-y-auto" role="menu">
-            <button role="menuitem" onClick={() => { (chain() as any).unsetFontSize().run(); setOpenMenu(null); }} className="menu-item h-7 text-muted">
+            <button
+              role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                (chain() as any).unsetFontSize().run();
+                setOpenMenu(null);
+                setTimeout(() => editor.commands.focus(), 0);
+              }}
+              className="menu-item h-7 text-muted"
+            >
               Sıfırla
             </button>
             {FONT_SIZES.map((s) => (
@@ -585,7 +598,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                 <button
                   key={lh}
                   role="menuitem"
-                  onClick={() => { (chain() as any).setLineHeight(lh).run(); setOpenMenu(null); }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    (chain() as any).setLineHeight(lh).run();
+                    setOpenMenu(null);
+                    setTimeout(() => editor.commands.focus(), 0);
+                  }}
                   className="menu-item h-8 tabular-nums"
                 >
                   <span className="flex-1">{lh.replace('.', ',')}</span>
@@ -593,7 +611,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                 </button>
               );
             })}
-            <button role="menuitem" onClick={() => { (chain() as any).unsetLineHeight().run(); setOpenMenu(null); }} className="menu-item h-8 text-muted">
+            <button
+              role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                (chain() as any).unsetLineHeight().run();
+                setOpenMenu(null);
+                setTimeout(() => editor.commands.focus(), 0);
+              }}
+              className="menu-item h-8 text-muted"
+            >
               Varsayılan
             </button>
           </div>
@@ -650,21 +677,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
             </div>
             <button
               role="menuitem"
-              onClick={() => { chain().addRowBefore().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().addRowBefore().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5"
             >
               Üste satır ekle
             </button>
             <button
               role="menuitem"
-              onClick={() => { chain().addRowAfter().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().addRowAfter().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5"
             >
               Alta satır ekle
             </button>
             <button
               role="menuitem"
-              onClick={() => { chain().deleteRow().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().deleteRow().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5 text-danger"
             >
               Satırı sil
@@ -677,6 +707,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
             </div>
             <button
               role="menuitem"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => { chain().addColumnBefore().run(); setOpenMenu(null); }}
               className="menu-item h-7.5"
             >
@@ -684,14 +715,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
             </button>
             <button
               role="menuitem"
-              onClick={() => { chain().addColumnAfter().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().addColumnAfter().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5"
             >
               Sağa sütun ekle
             </button>
             <button
               role="menuitem"
-              onClick={() => { chain().deleteColumn().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().deleteColumn().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5 text-danger"
             >
               Sütunu sil
@@ -704,14 +737,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
             </div>
             <button
               role="menuitem"
-              onClick={() => { chain().mergeOrSplit().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().mergeOrSplit().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5"
             >
               Hücreleri birleştir / böl
             </button>
             <button
               role="menuitem"
-              onClick={() => { chain().toggleHeaderRow().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().toggleHeaderRow().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5"
             >
               Başlık satırını aç/kapa
@@ -721,7 +756,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
             <button
               role="menuitem"
-              onClick={() => { chain().deleteTable().run(); setOpenMenu(null); }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { chain().deleteTable().run(); setOpenMenu(null); setTimeout(() => editor.commands.focus(), 0); }}
               className="menu-item h-7.5 text-danger font-medium flex items-center gap-1.5"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -755,9 +791,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
               <button
                 key={it.label}
                 role="menuitem"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   it.run();
                   setOpenMenu(null);
+                  setTimeout(() => editor.commands.focus(), 0);
                 }}
                 className="menu-item"
               >

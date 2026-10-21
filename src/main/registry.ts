@@ -10,6 +10,7 @@ export interface DocumentEntry {
   title: string;
   registeredAt: number;
   lastSavedAt?: number;
+  openedFromDisk?: boolean;
 }
 
 /**

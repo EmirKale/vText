@@ -5,9 +5,15 @@ import crypto from 'crypto';
 import mammoth from 'mammoth';
 import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } from '../shared/types';
 import { convertWithPandocOrLibreOffice } from './convert';
-import { documentRegistry } from './registry';
+import { documentRegistry, normalizePath } from './registry';
 import MarkdownIt from 'markdown-it';
 import JSZip from 'jszip';
+
+const backedUpPaths = new Set<string>();
+
+export function resetBackupTracker(): void {
+  backedUpPaths.clear();
+}
 
 const md = new MarkdownIt({
   html: true,
@@ -133,7 +139,19 @@ export async function showOpenFilePicker(browserWindow: BrowserWindow): Promise<
   }
 
   const targetPath = result.filePaths[0];
-  return openFileByPath(targetPath);
+  const openRes = await openFileByPath(targetPath);
+  if (!openRes.success && openRes.error) {
+    console.error(`[files:showOpenFilePicker] Belge açılamadı (${targetPath}): ${openRes.error} | Detay: ${openRes.details || 'Yok'}`);
+    await dialog.showMessageBox(browserWindow, {
+      type: 'error',
+      title: 'Belge Açılamadı',
+      message: openRes.error,
+      detail: openRes.details,
+      buttons: ['Tamam'],
+      noLink: true
+    });
+  }
+  return openRes;
 }
 
 export async function openDroppedFile(filePath: string): Promise<FileOpenResult> {
@@ -182,14 +200,67 @@ export async function sanitizeDocxTableHeaders(buffer: Buffer): Promise<Buffer> 
   }
 }
 
-function preserveDocxTableStructure(docElement: any): any {
+export const MAMMOTH_STYLE_MAP = [
+  "p[style-name='heading 1 center'] => h1.text-center:fresh",
+  "p[style-name='heading 2 center'] => h2.text-center:fresh",
+  "p[style-name='heading 3 center'] => h3.text-center:fresh",
+  "p[style-name='heading 1 right'] => h1.text-right:fresh",
+  "p[style-name='heading 2 right'] => h2.text-right:fresh",
+  "p[style-name='heading 3 right'] => h3.text-right:fresh",
+  "p[style-name='heading 1 justify'] => h1.text-justify:fresh",
+  "p[style-name='heading 2 justify'] => h2.text-justify:fresh",
+  "p[style-name='heading 3 justify'] => h3.text-justify:fresh",
+  "p[style-name='align-center'] => p.text-center:fresh",
+  "p[style-name='align-right'] => p.text-right:fresh",
+  "p[style-name='align-justify'] => p.text-justify:fresh",
+  "r[style-name='Emphasis'] => em",
+  "r[style-name='emphasis'] => em",
+  "r[style-name='Strong'] => strong",
+  "r[style-name='strong'] => strong",
+  "u => u"
+];
+
+export function preserveDocxStructureAndAlignment(docElement: any): any {
   if (!docElement) return docElement;
-  // Yalnızca iç içe çocukları özyinelemeli ziyaret et
-  // Başlıksız tablonun ilk satırını ZORLA başlık yapma
-  if (Array.isArray(docElement.children)) {
-    docElement.children.forEach(preserveDocxTableStructure);
+
+  function walk(el: any) {
+    if (!el) return;
+
+    if (el.type === 'paragraph' && el.alignment) {
+      const origStyle = (el.styleName || el.styleId || '').toLowerCase();
+      let alignSuffix = '';
+      if (el.alignment === 'center') alignSuffix = 'center';
+      else if (el.alignment === 'right' || el.alignment === 'end') alignSuffix = 'right';
+      else if (el.alignment === 'both' || el.alignment === 'justify') alignSuffix = 'justify';
+
+      if (alignSuffix) {
+        if (origStyle.startsWith('heading')) {
+          el.styleName = `${origStyle} ${alignSuffix}`;
+        } else {
+          el.styleName = `align-${alignSuffix}`;
+        }
+      }
+    }
+
+    if (Array.isArray(el.children)) {
+      el.children.forEach(walk);
+    }
   }
+
+  walk(docElement);
   return docElement;
+}
+
+export function preserveDocxTableStructure(docElement: any): any {
+  return preserveDocxStructureAndAlignment(docElement);
+}
+
+export function normalizeMammothHtml(rawHtml: string): string {
+  if (!rawHtml) return rawHtml;
+  return rawHtml
+    .replace(/class="text-center"/g, 'style="text-align: center"')
+    .replace(/class="text-right"/g, 'style="text-align: right"')
+    .replace(/class="text-justify"/g, 'style="text-align: justify"');
 }
 
 export async function openFileByPath(filePath: string): Promise<FileOpenResult> {
@@ -211,6 +282,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       }
 
       const entry = documentRegistry.register(filePath, ext, title);
+      entry.openedFromDisk = true;
       return {
         success: true,
         docId: entry.docId,
@@ -223,20 +295,44 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     // 2. DOCX (mammoth with B5: ignoreEmptyParagraphs: false)
     if (ext === 'docx') {
       const rawBuffer = await fs.promises.readFile(filePath);
+
+      // ODT tespit kontrolü: ZIP içinde word/document.xml yoksa ve mimetype ODT ise
+      try {
+        const zip = await JSZip.loadAsync(rawBuffer);
+        const hasDocumentXml = !!zip.file('word/document.xml');
+        const mimetypeFile = zip.file('mimetype');
+        const mimetype = mimetypeFile ? (await mimetypeFile.async('string')).trim() : '';
+
+        if (!hasDocumentXml && (mimetype === 'application/vnd.oasis.opendocument.text' || zip.file('content.xml'))) {
+          const errMsg = 'Bu dosya aslında bir ODT belgesi (uzantısı .docx yapılmış). LibreOffice\'te Farklı Kaydet > Word 2007-365 (.docx) ile kaydedip tekrar deneyin.';
+          const errDetail = 'ZIP içinde word/document.xml bulunamadı. Belge OpenDocument (ODT) yapısındadır.';
+          console.error(`[files:openFileByPath] ODT uzantı uyumsuzluğu (${filePath}): ${errMsg}`);
+          return {
+            success: false,
+            error: errMsg,
+            details: errDetail
+          };
+        }
+      } catch (zipErr) {
+        // Zip ayrıştırılamadıysa (0 bayt, bozuk vb.), aşağıdaki mammoth / catch bloğu yakalayacak
+      }
+
       const buffer = await sanitizeDocxTableHeaders(rawBuffer);
       const mammothResult = await mammoth.convertToHtml(
         { buffer },
         {
           ignoreEmptyParagraphs: false,
-          transformDocument: preserveDocxTableStructure
+          styleMap: MAMMOTH_STYLE_MAP,
+          transformDocument: preserveDocxStructureAndAlignment
         }
       );
       const entry = documentRegistry.register(filePath, 'docx', title);
+      entry.openedFromDisk = true;
       return {
         success: true,
         docId: entry.docId,
         title: entry.title,
-        content: mammothResult.value,
+        content: normalizeMammothHtml(mammothResult.value),
         format: 'docx',
         warning: mammothResult.messages.length > 0 ? mammothResult.messages.map((m) => m.message).join('\n') : undefined
       };
@@ -251,15 +347,17 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
           { buffer },
           {
             ignoreEmptyParagraphs: false,
-            transformDocument: preserveDocxTableStructure
+            styleMap: MAMMOTH_STYLE_MAP,
+            transformDocument: preserveDocxStructureAndAlignment
           }
         );
         const entry = documentRegistry.register(filePath, ext, title);
+        entry.openedFromDisk = true;
         return {
           success: true,
           docId: entry.docId,
           title: entry.title,
-          content: mammothResult.value,
+          content: normalizeMammothHtml(mammothResult.value),
           format: ext
         };
       } else {
@@ -273,6 +371,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     // Fallback: try reading as UTF-8
     const rawContent = await fs.promises.readFile(filePath, 'utf8');
     const entry = documentRegistry.register(filePath, ext, title);
+    entry.openedFromDisk = true;
     return {
       success: true,
       docId: entry.docId,
@@ -344,7 +443,8 @@ export async function showSaveFilePicker(
 
 export async function saveFile(
   docId: string,
-  content: string | Buffer | Uint8Array
+  content: string | Buffer | Uint8Array,
+  targetWindow?: BrowserWindow
 ): Promise<FileSaveResult> {
   const entry = documentRegistry.get(docId);
   if (!entry) {
@@ -411,6 +511,70 @@ export async function saveFile(
     };
   }
 
+  // GRUP 4: Diskten açılmış bir dosya ilk kez vText tarafından kaydedilirken,
+  // yazmadan ÖNCE orijinalin kopyasını aynı klasöre "Ad (vText öncesi yedek).uzantı" olarak yaz.
+  // Oturum başına dosya başına bir kez; aynı adlı yedek varsa üzerine yazma (sayı ekle). COPYFILE_EXCL kullan.
+  const canonKey = normalizePath(entry.filePath);
+  let backupFileName: string | undefined;
+
+  if (entry.openedFromDisk && fs.existsSync(entry.filePath) && !backedUpPaths.has(canonKey)) {
+    const ext = path.extname(entry.filePath);
+    const baseName = path.basename(entry.filePath, ext);
+
+    let backupSuccess = false;
+    let counter = 1;
+
+    try {
+      while (!backupSuccess) {
+        const suffix = counter === 1 ? ' (vText öncesi yedek)' : ` (vText öncesi yedek ${counter})`;
+        const candidateName = `${baseName}${suffix}${ext}`;
+        const candidatePath = path.join(dir, candidateName);
+
+        try {
+          await fs.promises.copyFile(entry.filePath, candidatePath, fs.constants.COPYFILE_EXCL);
+          backupSuccess = true;
+          backupFileName = candidateName;
+          backedUpPaths.add(canonKey);
+        } catch (copyErr: any) {
+          if (copyErr.code === 'EEXIST') {
+            counter++;
+            continue;
+          }
+          throw copyErr;
+        }
+      }
+    } catch (backupErr: any) {
+      console.error(`[saveFile] Yedek oluşturulamadı (${entry.filePath}):`, backupErr);
+      const win = targetWindow || (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]);
+      if (win) {
+        const choice = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: 'Yedek Alınamadı',
+          message: 'Yedek alınamadı. Yine de kaydetmek istiyor musunuz?',
+          buttons: ['Kaydet', 'İptal'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true
+        });
+        if (choice.response !== 0) {
+          return {
+            success: false,
+            error: 'Kayıt iptal edildi: Orijinal dosyanın yedeği alınamadı.',
+            errorCode: 'ERR_BACKUP_CANCELLED'
+          };
+        }
+        // Kullanıcı "Kaydet" dediyse bu oturumda bu dosya için tekrar sorma
+        backedUpPaths.add(canonKey);
+      } else {
+        return {
+          success: false,
+          error: 'Yedek alınamadı: ' + (backupErr?.message || String(backupErr)),
+          errorCode: 'ERR_BACKUP_FAILED'
+        };
+      }
+    }
+  }
+
   // Write to a temporary file in the same directory, fsync, then atomic rename
   const tempPath = path.join(dir, `.${path.basename(entry.filePath)}.${crypto.randomUUID()}.tmp`);
   let fileHandle: fs.promises.FileHandle | null = null;
@@ -435,7 +599,8 @@ export async function saveFile(
     return {
       success: true,
       docId: entry.docId,
-      title: entry.title
+      title: entry.title,
+      backupFileName
     };
   } catch (err: any) {
     if (fileHandle) {

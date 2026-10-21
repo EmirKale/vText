@@ -10,6 +10,9 @@ import { getApiKey } from './keystore';
 
 import { closeCoordinator } from './closeCoordinator';
 import { isValidSmokeTestOutPath } from './smokeValidator';
+import { documentRegistry } from './registry';
+
+(globalThis as any).__documentRegistry = documentRegistry;
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;

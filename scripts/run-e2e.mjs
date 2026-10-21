@@ -29,6 +29,7 @@ if (!fs.existsSync(artifactsDir)) {
   fs.mkdirSync(artifactsDir, { recursive: true });
 }
 
+const fixturesDir = path.join(projectRoot, 'tests', 'fixtures');
 let passedCount = 0;
 let failedCount = 0;
 const results = [];
@@ -134,6 +135,9 @@ async function runScenario1() {
     await env.page.keyboard.type('İlk Cümle');
     await env.page.waitForTimeout(300);
 
+    const s1Text = await env.page.locator('.ProseMirror').innerText();
+    assert.strictEqual(s1Text.trim(), 'İlk Cümle', `Senaryo 1 yazılan ilk metin tam eşleşmelidir. Bulunan: "${s1Text.trim()}"`);
+
     // Mavi nokta (dirty indicator) görünür olmalı
     let dirtyDot = await env.page.locator('.bg-accent.rounded-full').count();
     assert.ok(dirtyDot > 0, 'Yazı yazılınca mavi kayıt noktası belirmelidir');
@@ -160,6 +164,9 @@ async function runScenario1() {
     // 3. Bir kelime daha ekle
     await env.page.keyboard.type(' ve İkinci Kelime');
     await env.page.waitForTimeout(300);
+
+    const s1FullText = await env.page.locator('.ProseMirror').innerText();
+    assert.strictEqual(s1FullText.trim(), 'İlk Cümle ve İkinci Kelime', `Senaryo 1 ikinci yazılan metin tam eşleşmelidir. Bulunan: "${s1FullText.trim()}"`);
 
     dirtyDot = await env.page.locator('.bg-accent.rounded-full').count();
     assert.ok(dirtyDot > 0, 'Yeni metin eklenince mavi nokta tekrar belirmelidir');
@@ -625,6 +632,16 @@ async function runScenario7() {
         await env.page.keyboard.press('Tab');
       }
     }
+
+    // Metinlerin editörde tam olduğunu doğrula (ilk karakterlerin düşmediğini kanıtla)
+    const s7Text = await env.page.locator('.ProseMirror').innerText();
+    assert.ok(s7Text.includes('vText Proje Raporu'), 'Senaryo 7 Başlık 1 tam eşleşmelidir');
+    assert.ok(s7Text.includes('Bu belgede kalın metin ve italik metin bulunmaktadır.'), 'Senaryo 7 Paragraf tam eşleşmelidir');
+    assert.ok(s7Text.includes('Bölüm 1: Özellikler ve Sırasız Liste'), 'Senaryo 7 Başlık 2 tam eşleşmelidir');
+    assert.ok(s7Text.includes('Birinci liste maddesi'), 'Senaryo 7 Liste 1 tam eşleşmelidir');
+    assert.ok(s7Text.includes('İkinci liste maddesi'), 'Senaryo 7 Liste 2 tam eşleşmelidir');
+    assert.ok(s7Text.includes('Üçüncü liste maddesi'), 'Senaryo 7 Liste 3 tam eşleşmelidir');
+    assert.ok(s7Text.includes('Bölüm 1.1: Sıralı Adımlar'), 'Senaryo 7 Başlık 3 tam eşleşmelidir');
 
     // Ctrl+S ile kaydet
     await env.page.keyboard.press('Control+s');
@@ -1253,24 +1270,32 @@ async function runScenario12() {
     await env.page.keyboard.press('Backspace');
     await env.page.waitForTimeout(100);
 
-    // Başlık 1 seç
-    const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
-    await blockBtn.click({ force: true });
-    await env.page.waitForTimeout(150);
-    await env.page.locator('button[role="menuitem"]:has-text("Başlık 1")').click({ force: true });
-    await env.page.waitForTimeout(150);
+    async function selectBlockType(label) {
+      const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
+      await blockBtn.click({ force: true });
+      await env.page.waitForTimeout(100);
+      await env.page.locator(`button[role="menuitem"]:has-text("${label}")`).click({ force: true });
+      await env.page.waitForTimeout(100);
+      await env.page.locator('.ProseMirror').focus();
+    }
 
-    await env.page.keyboard.type('Calibri WYSIWYG Başlık 1');
+    // Başlık 1 seç ve yaz
+    await selectBlockType('Başlık 1');
+    await env.page.keyboard.type('Başlık 1');
     await env.page.keyboard.press('Enter');
 
-    // Gövde paragrafı seç
-    await blockBtn.click({ force: true });
-    await env.page.waitForTimeout(150);
-    await env.page.locator('button[role="menuitem"]:has-text("Paragraf")').click({ force: true });
-    await env.page.waitForTimeout(150);
-
-    await env.page.keyboard.type('Bu belge editöründe Calibri yazı tipi 12pt olarak kullanılmaktadır.');
+    // Gövde paragrafı seç ve yaz
+    await selectBlockType('Paragraf');
+    await env.page.keyboard.type('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.');
     await env.page.waitForTimeout(300);
+
+    // Metin tamlığını doğrula (ilk karakterlerin düşmediğini kanıtla)
+    const s12Text = await env.page.locator('.ProseMirror').innerText();
+    assert.ok(s12Text.includes('Başlık 1'), `Başlık 1 tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
+    assert.ok(
+      s12Text.includes('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.'),
+      `Gövde paragrafı tam metin bulunmalıdır. Bulunan: "${s12Text}"`
+    );
 
     const sizes = await env.page.evaluate(() => {
       const h1 = document.querySelector('.ProseMirror h1');
@@ -1288,10 +1313,36 @@ async function runScenario12() {
       `h1'in gövdeye göre font-size oranı 2.0 (24pt/12pt) olmalıdır, hesaplanan: ${sizes.ratio}`
     );
 
-    // 3. Playwright ile tam sayfa ekran görüntüsü al: test-artifacts/editor-calibri.png
-    await env.page.screenshot({ path: screenshotPath, fullPage: true });
-    assert.ok(fs.existsSync(screenshotPath), `Ekran görüntüsü oluşturulmalıdır: ${screenshotPath}`);
-    logPass(`Editör ekran görüntüsü kaydedildi: ${screenshotPath}`);
+    // 3. Açık ve Koyu tema ekran görüntülerini al
+    // Açık tema
+    await env.page.evaluate(() => {
+      document.documentElement.classList.remove('dark');
+      (window).kalem?.window?.setTheme?.(false);
+    });
+    await env.page.waitForTimeout(300);
+    const lightPath = path.join(artifactsDir, 'editor-calibri-light.png');
+    await env.page.screenshot({ path: lightPath, fullPage: true });
+    assert.ok(fs.existsSync(lightPath), `Açık tema ekran görüntüsü kaydedilmelidir: ${lightPath}`);
+    fs.copyFileSync(lightPath, screenshotPath);
+
+    // Koyu tema
+    await env.page.evaluate(() => {
+      document.documentElement.classList.add('dark');
+      (window).kalem?.window?.setTheme?.(true);
+    });
+    await env.page.waitForTimeout(300);
+    const darkPath = path.join(artifactsDir, 'editor-calibri-dark.png');
+    await env.page.screenshot({ path: darkPath, fullPage: true });
+    assert.ok(fs.existsSync(darkPath), `Koyu tema ekran görüntüsü kaydedilmelidir: ${darkPath}`);
+
+    // Temayı varsayılana geri çevir (açık tema)
+    await env.page.evaluate(() => {
+      document.documentElement.classList.remove('dark');
+      (window).kalem?.window?.setTheme?.(false);
+    });
+    await env.page.waitForTimeout(100);
+
+    logPass(`Editör açık ve koyu tema ekran görüntüleri kaydedildi: ${lightPath}, ${darkPath}`);
 
     // 4. PDF dışa aktar ve PyMuPDF ile gövde fontunun Calibri veya Carlito olduğunu doğrula
     const pdfExportPath = path.join(env.tmpWorkDir, 'scenario12_calibri.pdf');
@@ -1323,6 +1374,272 @@ async function runScenario12() {
   }
 }
 
+// =====================================================================
+// SENARYO 13: Bozuk Dosyalar ve Sahte-ODT Hata Diyaloğu Doğrulaması (GRUP 3)
+// =====================================================================
+async function runScenario13() {
+  logSection('SENARYO 13: Bozuk Dosyalar ve Sahte-ODT Hata Diyaloğu (Message / Detail / docId Sızıntı Önleme)');
+  const env = await createTestApp();
+  try {
+    const fixturesDir = path.resolve(projectRoot, 'tests', 'fixtures');
+    const fakeOdtFile = path.join(fixturesDir, 'corrupt-fake-odt.docx');
+    const zeroByteFile = path.join(fixturesDir, 'corrupt-zero-byte.docx');
+    const truncZipFile = path.join(fixturesDir, 'corrupt-truncated.docx');
+
+    await env.app.evaluate(({ dialog }) => {
+      globalThis.__shownDialogs = [];
+      dialog.showMessageBox = async (_win, opts) => {
+        globalThis.__shownDialogs.push(opts || _win);
+        return { response: 0 };
+      };
+    });
+
+    async function attemptOpen(filePath) {
+      await env.app.evaluate(({ dialog }, p) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+      }, filePath);
+
+      const beforeTabs = await env.page.locator('button[role="tab"]').count();
+      const beforeDocCount = await env.app.evaluate(() => (globalThis).__documentRegistry?.getCount() || 0);
+
+      await env.page.keyboard.press('Control+o');
+      await env.page.waitForTimeout(1000);
+
+      const afterTabs = await env.page.locator('button[role="tab"]').count();
+      const afterDocCount = await env.app.evaluate(() => (globalThis).__documentRegistry?.getCount() || 0);
+      return { beforeTabs, afterTabs, beforeDocCount, afterDocCount };
+    }
+
+    // 1. Sahte ODT (.docx yapılmış) testi
+    const odtRes = await attemptOpen(fakeOdtFile);
+    assert.strictEqual(odtRes.afterTabs, odtRes.beforeTabs, 'Sahte ODT için yeni sekme açılmamalıdır');
+    assert.strictEqual(odtRes.afterDocCount, odtRes.beforeDocCount, 'Sahte ODT için registry docId sızıntısı olmamalıdır');
+
+    const dialogs = await env.app.evaluate(() => globalThis.__shownDialogs);
+    assert.ok(dialogs.length >= 1, 'Hata diyaloğu (showMessageBox) tetiklenmelidir');
+    const lastDiag1 = dialogs[dialogs.length - 1];
+    assert.ok(
+      lastDiag1.message.includes('Bu dosya aslında bir ODT belgesi'),
+      `Sahte ODT için özel Türkçe mesaj gösterilmelidir. Alınan: "${lastDiag1.message}"`
+    );
+    assert.ok(
+      lastDiag1.detail && lastDiag1.detail.includes('ZIP içinde word/document.xml bulunamadı'),
+      `Teknik hata detayı detail alanında olmalıdır. Alınan: "${lastDiag1.detail}"`
+    );
+    logPass('Sahte-ODT için özel Türkçe diyalog mesajı, teknik detay ve sekme/docId koruması doğrulandı.');
+
+    // 2. 0 Baytlık dosya testi
+    const zeroRes = await attemptOpen(zeroByteFile);
+    assert.strictEqual(zeroRes.afterTabs, zeroRes.beforeTabs, '0 baytlık dosya için yeni sekme açılmamalıdır');
+    assert.strictEqual(zeroRes.afterDocCount, zeroRes.beforeDocCount, '0 baytlık dosya için registry docId sızıntısı olmamalıdır');
+
+    const dialogs2 = await env.app.evaluate(() => globalThis.__shownDialogs);
+    const lastDiag2 = dialogs2[dialogs2.length - 1];
+    assert.ok(
+      lastDiag2.message.includes('Bu dosya açılamadı'),
+      `0 bayt dosya için standart kullanıcı dostu mesaj gösterilmelidir. Alınan: "${lastDiag2.message}"`
+    );
+    assert.ok(
+      lastDiag2.detail && lastDiag2.detail.toLowerCase().includes('corrupted zip'),
+      `0 bayt dosya için teknik hata detayı detail alanında olmalıdır. Alınan: "${lastDiag2.detail}"`
+    );
+    logPass('0 baytlık bozuk dosya için kullanıcı dostu mesaj, teknik detay ve sekme/docId koruması doğrulandı.');
+
+    // 3. Kesilmiş (bozuk) ZIP dosyası testi
+    const truncRes = await attemptOpen(truncZipFile);
+    assert.strictEqual(truncRes.afterTabs, truncRes.beforeTabs, 'Bozuk ZIP için yeni sekme açılmamalıdır');
+    assert.strictEqual(truncRes.afterDocCount, truncRes.beforeDocCount, 'Bozuk ZIP için registry docId sızıntısı olmamalıdır');
+
+    const dialogs3 = await env.app.evaluate(() => globalThis.__shownDialogs);
+    const lastDiag3 = dialogs3[dialogs3.length - 1];
+    assert.ok(
+      lastDiag3.message.includes('Bu dosya açılamadı'),
+      `Bozuk ZIP için kullanıcı dostu mesaj gösterilmelidir. Alınan: "${lastDiag3.message}"`
+    );
+    assert.ok(
+      lastDiag3.detail && (lastDiag3.detail.includes('central directory') || lastDiag3.detail.includes('Corrupted zip')),
+      `Bozuk ZIP için teknik hata detayı detail alanında olmalıdır. Alınan: "${lastDiag3.detail}"`
+    );
+    logPass('Bozuk ZIP için kullanıcı dostu mesaj, teknik detay ve sekme/docId koruması doğrulandı.');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 13: Bozuk Dosyalar ve Sahte-ODT Hata Diyaloğu Doğrulaması', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 13 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 13: Bozuk Dosyalar ve Sahte-ODT Hata Diyaloğu Doğrulaması', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
+async function runScenario14() {
+  console.log(`\n======================================================================`);
+  console.log(`>>> SENARYO 14: Orijinal Dosyanın Yedeği (vText Öncesi Yedek & COPYFILE_EXCL)`);
+  console.log(`======================================================================`);
+
+  const env = await createTestApp();
+  const testSubdir = path.join(env.tmpWorkDir, 'scenario14');
+  fs.mkdirSync(testSubdir, { recursive: true });
+
+  try {
+    // 14.1. libreoffice-gui-test.docx kopyasını aç, değiştir, Ctrl+S:
+    // yedek oluşmalı ve bayt bayt orijinalle eşit olmalı.
+    const sourceFixture = path.join(fixturesDir, 'libreoffice-gui-test.docx');
+    const workingDocx = path.join(testSubdir, 'belge.docx');
+    fs.copyFileSync(sourceFixture, workingDocx);
+    const originalBytes = fs.readFileSync(sourceFixture);
+
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, workingDocx);
+
+    // Aç kısayolunu gönder
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await env.page.waitForTimeout(800);
+
+    // Sekme başlığının belge.docx olduğunu doğrula
+    const activeTabTitle = await env.page.locator('[role="tab"][aria-selected="true"] span.truncate').first().textContent();
+    assert.equal(activeTabTitle, 'belge.docx');
+
+    // Metin ekle
+    await env.page.evaluate(() => {
+      document.querySelector('.ProseMirror').focus();
+    });
+    await env.page.keyboard.type(' vText Tarafindan Degistirildi.');
+    await env.page.waitForTimeout(300);
+
+    // Ctrl+S ile kaydet
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    const expectedBackup1 = path.join(testSubdir, 'belge (vText öncesi yedek).docx');
+    assert.ok(fs.existsSync(expectedBackup1), 'Yedek dosyası "belge (vText öncesi yedek).docx" oluşmalıdır');
+
+    const backup1Bytes = fs.readFileSync(expectedBackup1);
+    assert.equal(
+      Buffer.compare(backup1Bytes, originalBytes),
+      0,
+      'Yedek dosya, kaydedilmeden önceki orijinal dosya ile bayt bayt eşit olmalıdır'
+    );
+
+    // Bildirim kontrolü: yalnızca dosya adı görünmeli, tam yol sızmamalı
+    const toastLocator = env.page.locator('[data-testid="backup-toast"]');
+    const toastCount = await toastLocator.count();
+    if (toastCount > 0) {
+      const toastText = await toastLocator.textContent();
+      assert.match(toastText, /belge \(vText öncesi yedek\)\.docx/);
+      assert.ok(!toastText.includes(testSubdir), 'Bildirimde tam klasör yolu yer almamalıdır');
+    }
+    logPass('libreoffice-gui-test.docx yedeği alındı, bayt bayt eşitliği ve bildirim doğrulandı.');
+
+    // 14.2. İkinci Ctrl+S yeni yedek üretmemeli
+    await env.page.keyboard.type(' Ikinci degisiklik.');
+    await env.page.waitForTimeout(300);
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    const expectedBackup2 = path.join(testSubdir, 'belge (vText öncesi yedek 2).docx');
+    assert.equal(fs.existsSync(expectedBackup2), false, 'Aynı oturumdaki 2. kayıtta yeni yedek üretilmemelidir');
+    logPass('İkinci Ctrl+S kaydında yeni yedek üretilmediği doğrulandı.');
+
+    // 14.3. Diskten açılmamış yeni belgede yedek olmamalı
+    await env.page.keyboard.press('Control+n');
+    await env.page.waitForTimeout(800);
+
+    const freshDocx = path.join(testSubdir, 'yeni_belge.docx');
+    await env.app.evaluate(({ dialog }, savePath) => {
+      dialog.showSaveDialog = async () => ({
+        canceled: false,
+        filePath: savePath
+      });
+    }, freshDocx);
+
+    await env.page.evaluate(() => {
+      document.querySelector('.ProseMirror').focus();
+    });
+    await env.page.keyboard.type('Diskten acilmamis yeni belge icerigi.');
+    await env.page.waitForTimeout(300);
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    assert.ok(fs.existsSync(freshDocx), 'Yeni oluşturulan belge diske kaydedilmelidir');
+    const unexpectedFreshBackup = path.join(testSubdir, 'yeni_belge (vText öncesi yedek).docx');
+    assert.equal(fs.existsSync(unexpectedFreshBackup), false, 'Diskten açılmamış yeni belgede yedek olmamalıdır');
+    logPass('Diskten açılmamış yeni belgede yedek oluşmadığı doğrulandı.');
+
+    // 14.4. Salt okunur klasörde diyalog çıkmalı ("Yedek alınamadı. Yine de kaydetmek istiyor musunuz?")
+    const roSubdir = path.join(env.tmpWorkDir, 'scenario14-ro');
+    fs.mkdirSync(roSubdir, { recursive: true });
+    const roDocx = path.join(roSubdir, 'salt_okunur.docx');
+    fs.copyFileSync(sourceFixture, roDocx);
+
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, roDocx);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1000);
+
+    // Klasörü salt okunur yap (NTFS dosya oluşturma engeli)
+    const { execSync } = await import('child_process');
+    try {
+      execSync(`icacls "${roSubdir}" /deny *S-1-1-0:(WD,AD)`);
+    } catch {}
+
+    await env.app.evaluate(({ dialog }) => {
+      (globalThis).__roBackupDialogs = [];
+      dialog.showMessageBox = async (_win, opts) => {
+        (globalThis).__roBackupDialogs.push(opts);
+        return { response: 1 }; // 1 = İptal
+      };
+    });
+
+    await env.page.evaluate(() => {
+      document.querySelector('.ProseMirror').focus();
+    });
+    await env.page.keyboard.type(' Salt okunur denemesi.');
+    await env.page.waitForTimeout(300);
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1200);
+
+    const dialogs = await env.app.evaluate(() => (globalThis).__roBackupDialogs);
+
+    // Klasör yetkisini temizle
+    try {
+      execSync(`icacls "${roSubdir}" /remove:d *S-1-1-0`);
+    } catch {}
+
+    const backupPrompt = dialogs.find((d) => d && d.message && d.message.includes('Yedek alınamadı'));
+    assert.ok(backupPrompt, 'Salt okunur klasörde yedek alınamadığında diyalog açılmalıdır');
+    assert.match(
+      backupPrompt.message,
+      /Yedek alınamadı\. Yine de kaydetmek istiyor musunuz\?/,
+      `Beklenen soru mesajı diyalogda yer almalıdır. Alınan: "${backupPrompt ? backupPrompt.message : 'Diyalog yok'}"`
+    );
+    assert.deepEqual(backupPrompt.buttons, ['Kaydet', 'İptal']);
+    logPass('Salt okunur klasörde "Yedek alınamadı. Yine de kaydetmek istiyor musunuz?" diyaloğu başarıyla doğrulandı.');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 14: Orijinal Dosyanın Yedeği (vText Öncesi Yedek)', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 14 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 14: Orijinal Dosyanın Yedeği (vText Öncesi Yedek)', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
 async function main() {
   console.log(`\n======================================================================`);
   console.log(`vText UÇTAN UCA (E2E) TEST KOŞUSU BAŞLADI`);
@@ -1330,18 +1647,29 @@ async function main() {
   console.log(`Zaman: ${new Date().toISOString()}`);
   console.log(`======================================================================`);
 
-  await runScenario1();
-  await runScenario2();
-  await runScenario3();
-  await runScenario4();
-  await runScenario5();
-  await runScenario6();
-  await runScenario7();
-  await runScenario8();
-  await runScenario9();
-  await runScenario10();
-  await runScenario11();
-  await runScenario12();
+  const targetScenario = process.argv[2];
+  const allScenarios = [
+    { num: '1', fn: runScenario1 },
+    { num: '2', fn: runScenario2 },
+    { num: '3', fn: runScenario3 },
+    { num: '4', fn: runScenario4 },
+    { num: '5', fn: runScenario5 },
+    { num: '6', fn: runScenario6 },
+    { num: '7', fn: runScenario7 },
+    { num: '8', fn: runScenario8 },
+    { num: '9', fn: runScenario9 },
+    { num: '10', fn: runScenario10 },
+    { num: '11', fn: runScenario11 },
+    { num: '12', fn: runScenario12 },
+    { num: '13', fn: runScenario13 },
+    { num: '14', fn: runScenario14 }
+  ];
+
+  for (const s of allScenarios) {
+    if (!targetScenario || targetScenario === s.num) {
+      await s.fn();
+    }
+  }
 
   console.log(`\n======================================================================`);
   console.log(`E2E TEST ÖZETİ: ${passedCount} BAŞARILI, ${failedCount} BAŞARISIZ (Toplam: ${passedCount + failedCount})`);

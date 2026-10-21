@@ -93,7 +93,19 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!validated.success) {
       return { success: false, error: validated.error };
     }
-    return openDroppedFile(validated.data.filePath);
+    const openRes = await openDroppedFile(validated.data.filePath);
+    if (!openRes.success && openRes.error && mainWindow) {
+      console.error(`[files:openDropped] Belge açılamadı (${validated.data.filePath}): ${openRes.error} | Detay: ${openRes.details || 'Yok'}`);
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Belge Açılamadı',
+        message: openRes.error,
+        detail: openRes.details,
+        buttons: ['Tamam'],
+        noLink: true
+      });
+    }
+    return openRes;
   });
 
   registerSecureHandler('files:showSaveDialog', async (_, defaultTitle: unknown, format: unknown) => {
@@ -118,7 +130,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           (validated.data.content as any).byteLength || (validated.data.content as any).length
         );
 
-    return saveFile(validated.data.docId, data);
+    return saveFile(validated.data.docId, data, mainWindow);
   });
 
   registerSecureHandler('files:unregister', async (_, docId: unknown) => {

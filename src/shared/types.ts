@@ -97,6 +97,7 @@ export interface FileSaveResult {
   error?: string;
   errorCode?: string;
   warning?: string;
+  backupFileName?: string;
 }
 
 export interface FileOpenResult {
