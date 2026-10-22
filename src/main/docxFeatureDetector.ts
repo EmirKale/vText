@@ -92,6 +92,59 @@ export async function detectUnsupportedDocxFeatures(
       if (/<w:object\b/i.test(docXml) || /<w:control\b/i.test(docXml)) {
         detected.add('gömülü nesneler');
       }
+
+      // 8. Denklemler (w:oMath / m:oMath)
+      if (/<(?:w|m):oMath\b/i.test(docXml)) {
+        detected.add('denklemler');
+      }
+
+      // 9. Metin kutuları (w:txbxContent)
+      if (/<w:txbxContent\b/i.test(docXml)) {
+        detected.add('metin kutuları');
+      }
+
+      // 10. Grafik (w:drawing içinde c:chart)
+      if (/<c:chart\b/i.test(docXml) || Object.keys(zip.files).some((k) => /^word\/charts\//i.test(k))) {
+        detected.add('grafik');
+      }
+
+      // 11. Şekil (wps:)
+      if (/<wps:(?:wsp|spPr|txbx)\b/i.test(docXml) || /<wps:\b/i.test(docXml)) {
+        detected.add('şekil');
+      }
+
+      // 12. SmartArt (dgm:)
+      if (/<dgm:\b/i.test(docXml) || Object.keys(zip.files).some((k) => /^word\/diagrams\//i.test(k))) {
+        detected.add('SmartArt');
+      }
+
+      // 13. Çok sütun (w:cols num > 1)
+      const colsMatch = docXml.match(/<w:cols\b[^>]*w:num=["'](\d+)["']/i);
+      if (colsMatch && parseInt(colsMatch[1], 10) > 1) {
+        detected.add('çok sütun');
+      }
+
+      // 14. Alanlar: TOC, PAGE, NUMPAGES (w:fldSimple veya w:instrText)
+      if (
+        /<w:fldSimple\b[^>]*w:instr=["'][^"']*\b(?:TOC|PAGE|NUMPAGES)\b/i.test(docXml) ||
+        /<w:instrText\b[^>]*>[^<]*\b(?:TOC|PAGE|NUMPAGES)\b/i.test(docXml)
+      ) {
+        detected.add('alanlar (TOC/PAGE/NUMPAGES)');
+      }
+
+      // 15. ptab (w:ptab)
+      if (/<w:ptab\b/i.test(docXml)) {
+        detected.add('ptab');
+      }
+
+      // 16. Çapraz başvurular (REF / PAGEREF ile w:bookmarkStart)
+      if (
+        /<w:bookmarkStart\b/i.test(docXml) &&
+        (/<w:fldSimple\b[^>]*w:instr=["'][^"']*\b(?:REF|PAGEREF)\b/i.test(docXml) ||
+         /<w:instrText\b[^>]*>[^<]*\b(?:REF|PAGEREF)\b/i.test(docXml))
+      ) {
+        detected.add('çapraz başvurular (REF/PAGEREF)');
+      }
     } catch {}
   }
 

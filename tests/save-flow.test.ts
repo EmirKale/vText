@@ -1,13 +1,29 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+
+vi.mock('electron', () => ({
+  app: { getPath: () => os.tmpdir() },
+  dialog: {
+    showMessageBox: vi.fn(),
+    showSaveDialog: vi.fn()
+  },
+  BrowserWindow: {
+    getFocusedWindow: () => undefined,
+    getAllWindows: () => []
+  },
+  protocol: {},
+  net: {}
+}));
+
 import { DocumentRegistry } from '../src/main/registry.ts';
 import { saveFile, openFileByPath, resetBackupTracker } from '../src/main/files.ts';
 import { exportTipTapJsonToDocx } from '../src/renderer/src/io/docxExport.ts';
 import { tipTapJsonToMarkdown } from '../src/renderer/src/io/markdown.ts';
 import { SaveFileSchema, validateIpc } from '../src/main/ipcSchemas.ts';
+import { dialog } from 'electron';
 
 describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
   let tmpDir: string;
@@ -292,6 +308,62 @@ describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
       const secondBackupPath = path.join(tmpDir, 'cakisma_belge (vText öncesi yedek 2).md');
       assert.equal(fs.existsSync(secondBackupPath), true);
       assert.equal(fs.readFileSync(secondBackupPath, 'utf8'), 'Orijinal içerik');
+    });
+  });
+
+  describe('Dış Değişiklik Koruması (H5)', () => {
+    it('Dosya vText dışında değiştirilirse sessizce üzerine yazmamalı, mtime ve SHA-256 korumalı olmalıdır', async () => {
+      const originalPath = path.join(tmpDir, 'dis_degisiklik_test.md');
+      fs.writeFileSync(originalPath, '# Orijinal Metin\nİlk hali.', 'utf8');
+
+      // 1. Dosyayı aç
+      const openRes = await openFileByPath(originalPath);
+      assert.equal(openRes.success, true);
+      const entry = registry.get(openRes.docId!)!;
+      assert.ok(entry.diskMtimeMs, 'Açılışta diskMtimeMs kaydedilmiş olmalıdır');
+      assert.ok(entry.diskSha256, 'Açılışta diskSha256 kaydedilmiş olmalıdır');
+
+      // 2. Dosyayı dışarıdan değiştir (mtime ve içerik değişir)
+      await new Promise(r => setTimeout(r, 20));
+      fs.writeFileSync(originalPath, '# Dış Değişiklik\nBaşka program tarafından yazıldı.', 'utf8');
+
+      // 3. Mock window ile kaydetmeyi dene (diyalog İptal dönsün)
+      const mockWin: any = {};
+      let dialogCalled = false;
+      vi.mocked(dialog.showMessageBox).mockImplementation(async (_winOrOpts: any, opts?: any) => {
+        dialogCalled = true;
+        const options = opts || _winOrOpts;
+        assert.match(options.message, /vText dışında değiştirilmiş/);
+        assert.deepEqual(options.buttons, ['Üzerine yaz', 'Farklı kaydet', 'İptal']);
+        assert.equal(options.defaultId, 2);
+        assert.equal(options.cancelId, 2);
+        return { response: 2, checkboxChecked: false }; // İptal
+      });
+
+      const saveRes = await saveFile(openRes.docId!, '# vText Metni', mockWin);
+      assert.equal(saveRes.success, false);
+      assert.equal(dialogCalled, true, 'Dış değişiklikte diyalog açılmalıdır');
+      // Dosya diskte dokunulmamış kalmalıdır
+      assert.equal(fs.readFileSync(originalPath, 'utf8'), '# Dış Değişiklik\nBaşka program tarafından yazıldı.');
+
+      // 4. "Üzerine yaz" seçildiğinde kaydedebilmeli
+      dialogCalled = false;
+      vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+        dialogCalled = true;
+        return { response: 0, checkboxChecked: false }; // Üzerine yaz
+      });
+
+      const saveRes2 = await saveFile(openRes.docId!, '# vText Metni', mockWin);
+      assert.equal(saveRes2.success, true);
+      assert.equal(dialogCalled, true);
+      assert.equal(fs.readFileSync(originalPath, 'utf8'), '# vText Metni');
+
+      // 5. vText'in kendi ikinci kaydında diyalog ÇIKMAMALI
+      dialogCalled = false;
+      const saveRes3 = await saveFile(openRes.docId!, '# vText İkinci Kayıt', mockWin);
+      assert.equal(saveRes3.success, true);
+      assert.equal(dialogCalled, false, 'vText\'in kendi ikinci kaydında diyalog ÇIKMAMALIDIR');
+      assert.equal(fs.readFileSync(originalPath, 'utf8'), '# vText İkinci Kayıt');
     });
   });
 });

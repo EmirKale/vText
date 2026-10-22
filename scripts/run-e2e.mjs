@@ -1275,50 +1275,209 @@ async function runScenario12() {
     });
     await env.page.waitForTimeout(100);
 
-    async function selectBlockType(label) {
-      const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
-      await blockBtn.click({ force: true });
-      await env.page.waitForTimeout(100);
-      await env.page.locator(`button[role="menuitem"]:has-text("${label}")`).click({ force: true });
+    async function assertActiveAndTyped(
+      actionName,
+      triggerFn,
+      textToType,
+      pressEnterAfter = true,
+      waitBeforeCheck = 100,
+      blurBefore = true
+    ) {
+      if (blurBefore) {
+        await env.page.evaluate(() => {
+          if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+          }
+        });
+        await env.page.waitForTimeout(50);
+      }
+      await triggerFn();
+      await env.page.waitForTimeout(waitBeforeCheck);
+      const activeInfo = await env.page.evaluate(() => {
+        const el = document.activeElement;
+        const isPM = el?.classList?.contains('ProseMirror') || el?.closest('.ProseMirror') !== null;
+        return { tagName: el?.tagName, className: el?.className, isPM };
+      });
+      assert.strictEqual(
+        activeInfo.isPM,
+        true,
+        `${actionName} menüsü/eylemi sonrası odak otomatik olarak ProseMirror editörüne dönmelidir. Bulunan activeElement: <${activeInfo.tagName} class="${activeInfo.className}">`
+      );
+      await env.page.keyboard.type(textToType);
+      if (pressEnterAfter) {
+        await env.page.keyboard.press('Enter');
+      }
       await env.page.waitForTimeout(150);
-      const isFocused = await env.page.evaluate(() => document.activeElement?.classList.contains('ProseMirror'));
-      assert.strictEqual(isFocused, true, 'Menü seçimi sonrası odak otomatik olarak ProseMirror editörüne dönmelidir');
+      const editorText = await env.page.locator('.ProseMirror').innerText();
+      assert.ok(
+        editorText.includes(textToType),
+        `${actionName} sonrası yazılan metin ("${textToType}") editörde eksiksiz yer almalıdır. Editör içeriği: "${editorText}"`
+      );
+      logPass(`${actionName} sonrası odak (<${activeInfo.tagName}>) ve metin doğrulandı ("${textToType.slice(0, 20)}...").`);
     }
 
     // 1. Başlık 1 seç ve doğrudan klavyeyle yaz
-    await selectBlockType('Başlık 1');
-    await env.page.keyboard.type('Başlık 1');
-    await env.page.keyboard.press('Enter');
+    await assertActiveAndTyped(
+      'Başlık 1',
+      async () => {
+        const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
+        await blockBtn.click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('button[role="menuitem"]:has-text("Başlık 1")').click({ force: true });
+      },
+      'Başlık 1'
+    );
 
     // 2. Gövde paragrafı seç ve yaz
-    await selectBlockType('Paragraf');
-    await env.page.keyboard.type('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.');
-    await env.page.keyboard.press('Enter');
+    await assertActiveAndTyped(
+      'Paragraf',
+      async () => {
+        const blockBtn = env.page.locator('button[aria-haspopup="menu"]').first();
+        await blockBtn.click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('button[role="menuitem"]:has-text("Paragraf")').click({ force: true });
+      },
+      'Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.'
+    );
 
-    // 3. Liste düğmesi tıkla ve doğrudan klavyeyle yaz
-    await env.page.locator('button[title="Madde işaretli liste"]').click({ force: true });
-    await env.page.waitForTimeout(100);
-    await env.page.keyboard.type('Liste deneme');
-    await env.page.keyboard.press('Enter');
+    // 3. Madde işaretli liste
+    await assertActiveAndTyped(
+      'Madde işaretli liste',
+      async () => {
+        await env.page.locator('button[title="Madde işaretli liste"]').click({ force: true });
+      },
+      'Liste deneme'
+    );
     await env.page.keyboard.press('Enter'); // Listeden çık
 
-    // 4. Yazı tipi menüsünden seçim yap ve doğrudan klavyeyle yaz
-    await env.page.locator('button[title="Yazı tipi"]').click({ force: true });
-    await env.page.waitForTimeout(100);
-    await env.page.locator('button[role="menuitem"]:has-text("Arial")').click({ force: true });
-    await env.page.waitForTimeout(100);
-    await env.page.keyboard.type('Arial metin deneme');
-    await env.page.waitForTimeout(300);
-
-    // Metin tamlığını doğrula (ilk karakterlerin düşmediğini kanıtla)
-    const s12Text = await env.page.locator('.ProseMirror').innerText();
-    assert.ok(s12Text.includes('Başlık 1'), `Başlık 1 tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
-    assert.ok(
-      s12Text.includes('Gövde paragrafında Calibri yazı tipi 12pt olarak kullanılmaktadır.'),
-      `Gövde paragrafı tam metin bulunmalıdır. Bulunan: "${s12Text}"`
+    // 4. Numaralı liste
+    await assertActiveAndTyped(
+      'Numaralı liste',
+      async () => {
+        await env.page.locator('button[title="Numaralı liste"]').click({ force: true });
+      },
+      'Numaralı liste deneme'
     );
-    assert.ok(s12Text.includes('Liste deneme'), `Liste deneme tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
-    assert.ok(s12Text.includes('Arial metin deneme'), `Arial metin deneme tam metin bulunmalıdır. Bulunan: "${s12Text}"`);
+    await env.page.keyboard.press('Enter'); // Listeden çık
+
+    // 5. Yazı tipi menüsü (Arial)
+    await assertActiveAndTyped(
+      'Yazı tipi',
+      async () => {
+        await env.page.locator('button[title="Yazı tipi"]').click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('button[role="menuitem"]:has-text("Arial")').click({ force: true });
+      },
+      'Arial metin deneme'
+    );
+
+    // 6. Punto menüsü (16pt)
+    await assertActiveAndTyped(
+      'Punto',
+      async () => {
+        await env.page.locator('button[aria-label="Boyut listesi"]').click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('button[role="menuitem"]:has-text("16")').click({ force: true });
+      },
+      '16pt punto deneme'
+    );
+
+    // 7. Hizalama (Ortala)
+    await assertActiveAndTyped(
+      'Hizalama',
+      async () => {
+        await env.page.locator('button[title="Ortala"]').click({ force: true });
+      },
+      'Ortalanmış metin deneme'
+    );
+
+    // 8. Metin rengi
+    await assertActiveAndTyped(
+      'Metin rengi',
+      async () => {
+        await env.page.locator('button[title="Yazı rengi"]').click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('div[role="menu"] button[title="#C0392B"]').click({ force: true });
+      },
+      'Kırmızı metin deneme'
+    );
+
+    // 9. Vurgu rengi
+    await assertActiveAndTyped(
+      'Vurgu rengi',
+      async () => {
+        await env.page.locator('button[title="Vurgu rengi"]').click({ force: true });
+        await env.page.waitForTimeout(100);
+        await env.page.locator('div[role="menu"] button[title="#80DEEA"]').click({ force: true });
+      },
+      'Vurgulanmış metin deneme'
+    );
+
+    // 10. Tablo ekle
+    await assertActiveAndTyped(
+      'Tablo ekle',
+      async () => {
+        await env.page.locator('button[title*="Tablo ekle"]').click({ force: true });
+      },
+      'TabloHücresiMetni',
+      false,
+      150
+    );
+
+    // Tablodan sonra editörün sonuna yeni satır
+    await env.page.keyboard.press('ArrowDown');
+    await env.page.keyboard.press('Enter');
+
+    // 11. Görsel ekle
+    await assertActiveAndTyped(
+      'Görsel ekle',
+      async () => {
+        await env.page.evaluate(() => {
+          window.prompt = () => 'https://example.com/test.png';
+        });
+        await env.page.locator('button[title="Görsel ekle"]').click({ force: true });
+      },
+      'GörselSonrasıMetin',
+      true,
+      150
+    );
+
+    // 12. Bağlantı ekle
+    await assertActiveAndTyped(
+      'Bağlantı ekle',
+      async () => {
+        await env.page.evaluate(() => {
+          window.prompt = () => 'https://example.com';
+        });
+        await env.page.locator('button[title="Bağlantı ekle"]').click({ force: true });
+      },
+      'BağlantıSonrasıMetin',
+      true,
+      150
+    );
+
+    // 13. Menüsüz yol: Ctrl+B ve Ctrl+I
+    await assertActiveAndTyped(
+      'Menüsüz Ctrl+B',
+      async () => {
+        await env.page.keyboard.press('Control+b');
+      },
+      'KlavyeBoldMetin ',
+      false,
+      100,
+      false
+    );
+
+    await assertActiveAndTyped(
+      'Menüsüz Ctrl+I',
+      async () => {
+        await env.page.keyboard.press('Control+i');
+      },
+      'KlavyeItalikMetin',
+      true,
+      100,
+      false
+    );
 
     const sizes = await env.page.evaluate(() => {
       const h1 = document.querySelector('.ProseMirror h1');
@@ -1783,12 +1942,39 @@ async function runScenario15() {
     const outPdf = path.join(testSubdir, 'roundtrip-s15.pdf');
     assert.ok(fs.existsSync(outPdf), 'LibreOffice ile dönüştürülen PDF mevcut olmalıdır');
 
-    // 4. PyMuPDF ile geometri ve tipografi analizi
+    // 4. PyMuPDF ile geometri ve tipografi analizi (metin alanı merkezi: sol ve sağ kenar boşluklarından)
     const pyScript = `
-import fitz, json, sys
-doc = fitz.open(sys.argv[1])
+import fitz, json, sys, zipfile, xml.etree.ElementTree as ET
+
+pdf_path = sys.argv[1]
+docx_path = sys.argv[2]
+
+doc = fitz.open(pdf_path)
 page = doc[0]
 page_width = page.rect.width
+
+# DOCX'ten kenar boşluklarını (w:pgMar) oku
+left_margin_pt = 72.0
+right_margin_pt = 72.0
+try:
+    with zipfile.ZipFile(docx_path) as z:
+        if "word/document.xml" in z.namelist():
+            root = ET.fromstring(z.read("word/document.xml"))
+            for elem in root.iter():
+                if elem.tag.endswith("pgMar"):
+                    left_attr = elem.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}left")
+                    right_attr = elem.attrib.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}right")
+                    if left_attr:
+                        left_margin_pt = float(left_attr) / 20.0
+                    if right_attr:
+                        right_margin_pt = float(right_attr) / 20.0
+                    break
+except Exception as e:
+    pass
+
+text_area_left = left_margin_pt
+text_area_right = page_width - right_margin_pt
+text_area_center = (text_area_left + text_area_right) / 2.0
 
 heading_span = None
 italic_span = None
@@ -1812,25 +1998,28 @@ for block in d.get("blocks", []):
 
 print(json.dumps({
     "page_width": page_width,
+    "left_margin_pt": left_margin_pt,
+    "right_margin_pt": right_margin_pt,
+    "text_area_center": text_area_center,
     "heading": heading_span,
     "italic": italic_span,
     "list": list_spans
 }))
 `;
-    const pyOut = execFileSync(pyExe, ['-c', pyScript, outPdf], { encoding: 'utf-8' });
+    const pyOut = execFileSync(pyExe, ['-c', pyScript, outPdf, workingDocx], { encoding: 'utf-8' });
     const pyData = JSON.parse(pyOut.slice(pyOut.indexOf('{')));
 
-    // a) Başlık ortada (x konumu)
+    // a) Başlık ortada (metin alanı merkezine göre x konumu, tolerans <= 6.0 pt)
     assert.ok(pyData.heading, 'PDF içinde başlık span bulunmalıdır');
     const [hX0, , hX1] = pyData.heading.bbox;
     const headingCenter = (hX0 + hX1) / 2;
-    const pageCenter = pyData.page_width / 2;
-    const centerOffset = Math.abs(headingCenter - pageCenter);
+    const textAreaCenter = pyData.text_area_center;
+    const centerOffset = Math.abs(headingCenter - textAreaCenter);
     assert.ok(
-      centerOffset <= 35.0,
-      `Başlık sayfa ortasında olmalıdır (offset <= 35pt). Merkez sapması: ${centerOffset.toFixed(2)}pt (başlık merkezi: ${headingCenter.toFixed(2)}, sayfa merkezi: ${pageCenter.toFixed(2)})`
+      centerOffset <= 6.0,
+      `Başlık metin alanı ortasında olmalıdır (offset <= 6.0pt). Merkez sapması: ${centerOffset.toFixed(2)}pt (başlık merkezi: ${headingCenter.toFixed(2)}, metin alanı merkezi: ${textAreaCenter.toFixed(2)}, sol kenar boşluğu: ${pyData.left_margin_pt}pt, sağ kenar boşluğu: ${pyData.right_margin_pt}pt)`
     );
-    logPass(`Başlık ortada doğrulandı (sapma: ${centerOffset.toFixed(2)} pt).`);
+    logPass(`Başlık metin alanı merkezinde doğrulandı (sapma: ${centerOffset.toFixed(2)} pt, tolerans: 6.0 pt, sol: ${pyData.left_margin_pt}pt, sağ: ${pyData.right_margin_pt}pt).`);
 
     // b) İtalik font var
     assert.ok(pyData.italic, 'PDF içinde Emphasis span bulunmalıdır');
@@ -1976,6 +2165,108 @@ async function runScenarioA4Layout() {
   }
 }
 
+// =====================================================================
+// SENARYO 17: Dış Değişiklik Koruması (External Change Protection - H5)
+// =====================================================================
+async function runScenario17() {
+  logSection('SENARYO 17: Dış Değişiklik Koruması (mtime ve SHA-256 ile Sessiz Üzerine Yazmayı Önleme)');
+  const env = await createTestApp();
+  const testSubdir = path.join(env.tmpWorkDir, 'scenario17');
+  fs.mkdirSync(testSubdir, { recursive: true });
+
+  try {
+    const testFile = path.join(testSubdir, 'external_test.md');
+    fs.writeFileSync(testFile, '# Orijinal Metin\nİlk vText içeriği.', 'utf8');
+
+    // 1. Dosyayı vText ile aç (Ctrl+O)
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, testFile);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await env.page.waitForTimeout(1000);
+
+    // Editörde yazı yaz
+    await env.page.locator('.ProseMirror').focus();
+    await env.page.keyboard.type(' Yeni eklenen metin.');
+    await env.page.waitForTimeout(300);
+
+    // 2. Dosyayı test içinde dışarıdan değiştir
+    await new Promise(r => setTimeout(r, 50));
+    const externalContent = '# Dış Değişiklik\nNotepad tarafından dışarıdan yazıldı.';
+    fs.writeFileSync(testFile, externalContent, 'utf8');
+
+    // 3. Mock showMessageBox: Diyalog çağrıldığını kaydet ve varsayılan İptal (response: 2) dön
+    await env.app.evaluate(({ dialog }) => {
+      globalThis.__externalDialogCalls = [];
+      dialog.showMessageBox = async (winOrOpts, maybeOpts) => {
+        const opts = maybeOpts || winOrOpts;
+        globalThis.__externalDialogCalls.push(opts);
+        return { response: 2 }; // İptal (varsayılan)
+      };
+    });
+
+    // 4. Ctrl+S: Diyalog ÇIKMALI, İptal'de dosya dokunulmamış kalmalı
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    const dialogCalls = await env.app.evaluate(() => globalThis.__externalDialogCalls);
+    assert.equal(dialogCalls.length, 1, 'Dış değişiklik sonrasında TAM OLARAK 1 kayıt diyaloğu açılmalıdır');
+    assert.match(dialogCalls[0].message, /vText dışında değiştirilmiş/, 'Diyalog mesajı dış değişikliği bildirmelidir');
+    assert.deepEqual(dialogCalls[0].buttons, ['Üzerine yaz', 'Farklı kaydet', 'İptal'], 'Diyalog 3 butona sahip olmalıdır');
+    assert.equal(dialogCalls[0].defaultId, 2, 'Varsayılan buton İptal olmalıdır');
+
+    // İptal edildiği için diskteki dosya dokunulmamış kalmalıdır
+    const diskContentAfterCancel = fs.readFileSync(testFile, 'utf8');
+    assert.equal(diskContentAfterCancel, externalContent, 'İptal seçildiğinde diskteki dosya dokunulmamış kalmalıdır');
+    logPass('Dış değişiklik algılandı, diyalog açıldı, İptal seçilince diskteki dosya dokunulmadı.');
+
+    // 5. Şimdi "Üzerine yaz" seçerek kaydetmeyi dene
+    await env.app.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async (winOrOpts, maybeOpts) => {
+        const opts = maybeOpts || winOrOpts;
+        globalThis.__externalDialogCalls.push(opts);
+        return { response: 0 }; // Üzerine yaz
+      };
+    });
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    const diskContentAfterOverwrite = fs.readFileSync(testFile, 'utf8');
+    assert.notEqual(diskContentAfterOverwrite, externalContent, 'Üzerine yaz seçildiğinde dosya vText içeriğiyle güncellenmelidir');
+    assert.match(diskContentAfterOverwrite, /Yeni eklenen metin/, 'Dosyada vText metni yer almalıdır');
+    logPass('Üzerine yaz seçildiğinde dosya başarıyla güncellendi.');
+
+    // 6. vText'in kendi ikinci kaydında diyalog ÇIKMAMALI
+    await env.app.evaluate(() => {
+      globalThis.__externalDialogCalls = [];
+    });
+
+    await env.page.keyboard.type(' İkinci ekleme.');
+    await env.page.waitForTimeout(300);
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1000);
+
+    const secondDialogCalls = await env.app.evaluate(() => globalThis.__externalDialogCalls);
+    assert.equal(secondDialogCalls.length, 0, 'vText\'in kendi ikinci kaydında diyalog ÇIKMAMALIDIR (yanlış alarm olmamalı)');
+    logPass('vText\'in kendi ikinci kaydında diyalog ÇIKMADI (doğrulandı).');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 17 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
 async function main() {
   console.log(`\n======================================================================`);
   console.log(`vText UÇTAN UCA (E2E) TEST KOŞUSU BAŞLADI`);
@@ -2000,7 +2291,8 @@ async function main() {
     { num: '13', fn: runScenario13 },
     { num: '14', fn: runScenario14 },
     { num: '15', fn: runScenario15 },
-    { num: '16', fn: runScenarioA4Layout }
+    { num: '16', fn: runScenarioA4Layout },
+    { num: '17', fn: runScenario17 }
   ];
 
   for (const s of allScenarios) {

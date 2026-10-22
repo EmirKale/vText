@@ -285,7 +285,10 @@ export const App: React.FC = () => {
         }
         return true;
       } else if (saveRes && saveRes.error) {
-        if (saveRes.errorCode !== 'ERR_BACKUP_CANCELLED') {
+        if (
+          saveRes.errorCode !== 'ERR_BACKUP_CANCELLED' &&
+          saveRes.errorCode !== 'ERR_EXTERNAL_CHANGE_CANCELLED'
+        ) {
           alert(`Kaydetme hatası: ${saveRes.error}`);
         }
         return false;

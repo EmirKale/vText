@@ -128,4 +128,94 @@ describe('GRUP E: Kaybolacak İçerik Uyarısı & Desteklenmeyen Öğe Tespiti',
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  describe('H6: Uyarı Motoru Kapsam Genişletme ve LibreOffice Fixture Testleri', () => {
+    const fixturesDir = path.resolve(__dirname, 'fixtures');
+
+    async function loadFixtureZip(name: string): Promise<JSZip> {
+      const p = path.join(fixturesDir, name);
+      const buf = fs.readFileSync(p);
+      return JSZip.loadAsync(buf);
+    }
+
+    it('H6.1: Temiz LibreOffice belgesinde (h6-clean.docx) hiçbir uyarı çıkmamalıdır', async () => {
+      const zip = await loadFixtureZip('h6-clean.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(false);
+      expect(res.features).toHaveLength(0);
+      expect(res.warningMessage).toBeUndefined();
+    });
+
+    it('H6.2: Denklemler (w:oMath / m:oMath) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-equations.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('denklemler');
+      expect(res.warningMessage).toContain('denklemler');
+    });
+
+    it('H6.3: Metin kutuları (w:txbxContent) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-textboxes.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('metin kutuları');
+      expect(res.warningMessage).toContain('metin kutuları');
+    });
+
+    it('H6.4: Şekil (wps:) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-shapes.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('şekil');
+      expect(res.warningMessage).toContain('şekil');
+    });
+
+    it('H6.5: Çok sütun (w:cols num > 1) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-columns.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('çok sütun');
+      expect(res.warningMessage).toContain('çok sütun');
+    });
+
+    it('H6.6: Alanlar (TOC, PAGE, NUMPAGES) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-fields.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('alanlar (TOC/PAGE/NUMPAGES)');
+      expect(res.warningMessage).toContain('alanlar (TOC/PAGE/NUMPAGES)');
+    });
+
+    it('H6.7: Çapraz başvurular (REF/PAGEREF ile w:bookmarkStart) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-crossref.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('çapraz başvurular (REF/PAGEREF)');
+      expect(res.warningMessage).toContain('çapraz başvurular (REF/PAGEREF)');
+    });
+
+    it('H6.8: ptab (w:ptab) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-ptab.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('ptab');
+      expect(res.warningMessage).toContain('ptab');
+    });
+
+    it('H6.9: Grafik (c:chart) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-chart.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('grafik');
+      expect(res.warningMessage).toContain('grafik');
+    });
+
+    it('H6.10: SmartArt (dgm:) tespit edilmelidir', async () => {
+      const zip = await loadFixtureZip('h6-smartart.docx');
+      const res = await detectUnsupportedDocxFeatures(zip);
+      expect(res.hasUnsupported).toBe(true);
+      expect(res.features).toContain('SmartArt');
+      expect(res.warningMessage).toContain('SmartArt');
+    });
+  });
 });

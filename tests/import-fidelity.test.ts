@@ -8,7 +8,7 @@ import { exportTipTapJsonToDocx } from '../src/renderer/src/io/docxExport';
 import { DocumentRegistry } from '../src/main/registry';
 
 describe('Grup 5: İçe Aktarma Sadakati ve Biçim Koruma Testleri', () => {
-  const fixturesDir = path.resolve('scratch_group5');
+  const fixturesDir = path.resolve(__dirname, 'fixtures');
 
   // 5.2 (a) w:jc hizalama
   it('5.2 (a): doc1_alignment.docx açıldığında ortalanmış başlık, sağa ve iki yana yaslı paragraflar textAlign stiliyle korunmalıdır', async () => {

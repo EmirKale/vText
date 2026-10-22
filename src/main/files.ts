@@ -17,6 +17,17 @@ import { detectUnsupportedDocxFeatures } from './docxFeatureDetector';
 
 const backedUpPaths = new Set<string>();
 
+async function recordDiskFileInfo(entry: any, filePath: string, knownBuffer?: Buffer): Promise<void> {
+  try {
+    const stat = await fs.promises.stat(filePath);
+    const buf = knownBuffer || (await fs.promises.readFile(filePath));
+    entry.diskMtimeMs = stat.mtimeMs;
+    entry.diskSha256 = computeBufferSha256(buf);
+  } catch (err) {
+    // Stat veya okuma hatası olursa sessizce geç
+  }
+}
+
 export function resetBackupTracker(): void {
   backedUpPaths.clear();
 }
@@ -291,6 +302,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       entry.openedFromDisk = true;
       entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
       if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
+      await recordDiskFileInfo(entry, filePath, rawBuffer);
       return {
         success: true,
         docId: entry.docId,
@@ -354,6 +366,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       entry.openedFromDisk = true;
       entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
       if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
+      await recordDiskFileInfo(entry, filePath, rawBuffer);
       return {
         success: true,
         docId: entry.docId,
@@ -383,6 +396,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
         entry.openedFromDisk = true;
         entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
         if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
+        await recordDiskFileInfo(entry, filePath);
         return {
           success: true,
           docId: entry.docId,
@@ -404,6 +418,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
     entry.openedFromDisk = true;
     entry.wasLastSavedByVText = isFileLastWrittenByVText(filePath);
     if (!entry.wasLastSavedByVText) backedUpPaths.delete(normalizePath(filePath));
+    await recordDiskFileInfo(entry, filePath, Buffer.from(rawContent, 'utf8'));
     return {
       success: true,
       docId: entry.docId,
@@ -543,6 +558,65 @@ export async function saveFile(
     };
   }
 
+  // DIŞ DEĞİŞİKLİK KORUMASI (H5):
+  // Dosya vText'te açıkken başka program değiştirirse:
+  // Açılışta diskteki mtime ve SHA-256 kaydedilmiştir.
+  // Kaydetmeden önce aynı değerlerle karşılaştır.
+  // Farklıysa sor: "Bu dosya vText dışında değiştirilmiş. Üzerine yaz / Farklı kaydet / İptal" (varsayılan İptal).
+  if (
+    entry.openedFromDisk &&
+    fs.existsSync(entry.filePath) &&
+    entry.diskMtimeMs !== undefined &&
+    entry.diskSha256 !== undefined
+  ) {
+    try {
+      const currentStat = await fs.promises.stat(entry.filePath);
+      if (currentStat.mtimeMs !== entry.diskMtimeMs) {
+        const currentBytes = await fs.promises.readFile(entry.filePath);
+        const currentSha = computeBufferSha256(currentBytes);
+        if (currentSha !== entry.diskSha256) {
+          console.warn(`[saveFile] Dış değişiklik tespit edildi (${entry.filePath})`);
+          const win = targetWindow || (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]);
+          if (win) {
+            const choice = await dialog.showMessageBox(win, {
+              type: 'warning',
+              title: 'Dosya Dışarıda Değiştirilmiş',
+              message: 'Bu dosya vText dışında değiştirilmiş.',
+              detail: 'Bu dosya vText dışında değiştirilmiş. Üzerine yaz / Farklı kaydet / İptal',
+              buttons: ['Üzerine yaz', 'Farklı kaydet', 'İptal'],
+              defaultId: 2,
+              cancelId: 2,
+              noLink: true
+            });
+
+            if (choice.response === 2) {
+              // İptal (Varsayılan) -> Dosyaya kesinlikle dokunulmaz
+              return {
+                success: false,
+                error: 'Kayıt kullanıcı tarafından iptal edildi: Dosya vText dışında değiştirilmiş.',
+                errorCode: 'ERR_EXTERNAL_CHANGE_CANCELLED'
+              };
+            } else if (choice.response === 1) {
+              // Farklı kaydet
+              const savePickerRes = await showSaveFilePicker(win, entry.title, entry.format);
+              if (savePickerRes.canceled || !savePickerRes.docId) {
+                return {
+                  success: false,
+                  error: 'Kayıt iptal edildi: Farklı kaydetme işlemi iptal edildi.',
+                  errorCode: 'ERR_EXTERNAL_CHANGE_CANCELLED'
+                };
+              }
+              return saveFile(savePickerRes.docId, content, win);
+            }
+            // choice.response === 0: 'Üzerine yaz' -> kaydetmeye devam et
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn('[saveFile] Dış değişiklik kontrolü sırasında hata:', checkErr);
+    }
+  }
+
   // GRUP 4: Diskten açılmış bir dosya ilk kez vText tarafından kaydedilirken,
   // yazmadan ÖNCE orijinalin kopyasını aynı klasöre "Ad (vText öncesi yedek).uzantı" olarak yaz.
   // Oturum başına dosya başına bir kez; aynı adlı yedek varsa üzerine yazma (sayı ekle). COPYFILE_EXCL kullan.
@@ -632,8 +706,12 @@ export async function saveFile(
 
     try {
       const writtenBuffer = await fs.promises.readFile(entry.filePath);
-      recordFileSavedByVText(entry.filePath, computeBufferSha256(writtenBuffer));
+      const writtenStat = await fs.promises.stat(entry.filePath);
+      const writtenSha = computeBufferSha256(writtenBuffer);
+      recordFileSavedByVText(entry.filePath, writtenSha);
       entry.wasLastSavedByVText = true;
+      entry.diskMtimeMs = writtenStat.mtimeMs;
+      entry.diskSha256 = writtenSha;
       backedUpPaths.add(canonKey);
     } catch (regErr) {
       console.warn('[saveFile] backupRegistry kaydedilemedi:', regErr);

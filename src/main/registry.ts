@@ -12,6 +12,8 @@ export interface DocumentEntry {
   lastSavedAt?: number;
   openedFromDisk?: boolean;
   wasLastSavedByVText?: boolean;
+  diskMtimeMs?: number;
+  diskSha256?: string;
 }
 
 /**

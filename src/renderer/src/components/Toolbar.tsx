@@ -204,19 +204,33 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   };
 
   const handleAddImage = () => {
-    const url = prompt('Görsel adresi (URL veya dosya yolu):');
-    if (url) chain().setImage({ src: url }).run();
+    let url: string | null = null;
+    try {
+      url = typeof window.prompt === 'function' ? window.prompt('Görsel adresi (URL veya dosya yolu):') : null;
+    } catch {
+      url = null;
+    }
+    if (url) {
+      chain().setImage({ src: url }).createParagraphNear().focus('end').run();
+    } else {
+      focusEditor();
+    }
   };
 
   const handleAddLink = () => {
     const previousUrl = editor.getAttributes('link').href;
-    const url = prompt('Bağlantı adresi:', previousUrl);
-    if (url === null) return;
-    if (url === '') {
-      chain().extendMarkRange('link').unsetLink().run();
+    let url: string | null = null;
+    try {
+      url = typeof window.prompt === 'function' ? window.prompt('Bağlantı adresi:', previousUrl) : null;
+    } catch {
+      url = null;
+    }
+    if (url === null || url === '') {
+      if (url === '') chain().extendMarkRange('link').unsetLink().run();
+      focusEditor();
       return;
     }
-    chain().extendMarkRange('link').setLink({ href: url }).run();
+    chain().extendMarkRange('link').setLink({ href: url }).focus().run();
   };
 
   const insertItems = [
@@ -695,6 +709,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
               toggleMenu('table');
             } else {
               chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+              focusEditor();
             }
           }}
           data-active={editor.isActive('table') || openMenu === 'table'}

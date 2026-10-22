@@ -41,9 +41,9 @@
 ### 5.2 (d) Karar Notu: Serbest Yazı Tipi ve Punto Korunumu
 - **Mammoth'ta Mümkün mü?** HAYIR. Mammoth'un tasarım felsefesi anlamsal belge yapısına odaklanır. Belge içindeki serbest satır içi yazı tipi adları (`w:rFonts`) ve punto boyutları (`w:sz`), web semantiğinde tutarsız ve temizlenmesi zor satır içi stil karmaşası yarattığı için Mammoth tarafından kasıtlı olarak göz ardı edilir.
 - **Alternatif 1: `word/document.xml` Ön-İşleme (Pre-processing):**
-  DOCX arşivini açıp XML içindeki `w:rFonts` ve `w:sz` değerlerini sentetik karakter stillerine (`vtext_font_X_size_Y`) dönüştürüp `word/styles.xml`'e yazmak ve Mammoth `styleMap`'e eklemek teorik olarak mümkündür. Ancak ECMA-376 stil kalıtımı (Document Defaults, Normal, Paragraph Style, Character Style, Run Properties) hiyerarşisi simüle edilmeden yapılan bu müdahale, mevcut stilleri bozar, dosya boyutunu ve açılış süresini artırır ve yüksek dosya bozulma riski taşır.
+  DOCX arşivini açıp XML içindeki `w:rFonts` ve `w:sz` değerlerini sentetik karakter stillerine (`vtext_font_X_size_Y`) dönüştürüp `word/styles.xml`'e yazmak ve Mammoth `styleMap`'e eklemek teorik olarak mümkündür. Ancak ECMA-376 stil kalıtımı (Document Defaults, Normal, Paragraph Style, Character Style, Run Properties) hiyerarşisi simüle edilmeden yapılan bu müdahale, mevcut stilleri bozar, dosya boyutunu ve açılış süresini artırır ve yüksek dosya bozulma riski taşır. (Not: Ön analizlerdeki "Word belgelerinin %70'inden fazlası tema fontu kullanır" ve "5-10 kat DOM şişmesi" ifadeleri ölçülmemiştir, tahmindir).
 - **Alternatif 2: Kendi İçe Aktarıcımız (Custom OpenXML Importer):**
-  Mammoth yerine sıfırdan OpenXML DOM ayrıştırıcısı yazmak yüzlerce adam-saat gerektiren aşırı maliyetli bir iştir.
+  Mammoth yerine sıfırdan OpenXML DOM ayrıştırıcısı yazmak yüzlerce adam-saat (kaba tahmin) gerektiren aşırı maliyetli bir iştir.
 - **Karar:** vText, standart bir tipografi yığınına (Calibri/Carlito, 12pt gövde) sahip bir kelime işlemcidir. Rastgele font/punto karmaşasını içeri almak tipografik tutarlılığı bozar. Bu nedenle serbest yazı tipi ve punto korunumu Mammoth tasarım sınırları çerçevesinde **bilinen sınır** olarak kabul edilmiş ve spekülatif kod yazılmamıştır.
 
 ## 6. Tipografi ve WYSIWYG Ölçüm Raporu
