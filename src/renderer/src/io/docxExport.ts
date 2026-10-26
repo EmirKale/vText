@@ -17,15 +17,22 @@ import {
   LevelFormat
 } from 'docx';
 import { TYPOGRAPHY } from '../../../shared/typography';
+import { PageSetup } from '../../../shared/types';
 
 export const DOCX_TABLE_BORDER_COLOR = '9CA3AF';
 export const DOCX_TABLE_BORDER_SIZE = 4; // 0.5 pt (in eighths of a point)
 export const DOCX_TABLE_HEADER_SHADING_COLOR = 'F3F4F6';
 
+export interface DocxExportOptions {
+  margin?: 'normal' | 'narrow' | 'wide';
+  orientation?: 'portrait' | 'landscape';
+  pageSetup?: PageSetup;
+}
+
 export async function exportTipTapJsonToDocx(
   docJson: any,
   documentTitle: string = 'Belge',
-  options?: { margin?: 'normal' | 'narrow' | 'wide'; orientation?: 'portrait' | 'landscape' }
+  options?: DocxExportOptions
 ): Promise<Uint8Array> {
   const children: any[] = [];
 
@@ -335,7 +342,44 @@ export async function exportTipTapJsonToDocx(
 
   const marginDxa =
     options?.margin === 'narrow' ? 720 : options?.margin === 'wide' ? 2880 : TYPOGRAPHY.page.marginDxa;
-  const isLandscape = options?.orientation === 'landscape';
+
+  const isLandscape = options?.pageSetup
+    ? options.pageSetup.orientation === 'landscape' || options.pageSetup.widthDxa > options.pageSetup.heightDxa
+    : options?.orientation === 'landscape';
+
+  let pageWidth = options?.pageSetup
+    ? options.pageSetup.widthDxa
+    : isLandscape ? TYPOGRAPHY.page.heightDxa : TYPOGRAPHY.page.widthDxa;
+
+  let pageHeight = options?.pageSetup
+    ? options.pageSetup.heightDxa
+    : isLandscape ? TYPOGRAPHY.page.widthDxa : TYPOGRAPHY.page.heightDxa;
+
+  // npm 'docx' paketi orientation: LANDSCAPE olduğunda width ve height değerlerini
+  // XML'e yazarken tersine çevirir (w:w = height, w:h = width).
+  // Bu nedenle OpenXML standardına ve w:w > w:h kuralına uygun çıktı üretmesi için:
+  const exportWidth = isLandscape ? Math.min(pageWidth, pageHeight) : Math.min(pageWidth, pageHeight);
+  const exportHeight = isLandscape ? Math.max(pageWidth, pageHeight) : Math.max(pageWidth, pageHeight);
+
+  const pageMargins = options?.pageSetup?.margins
+    ? {
+        top: options.pageSetup.margins.top,
+        bottom: options.pageSetup.margins.bottom,
+        left: options.pageSetup.margins.left,
+        right: options.pageSetup.margins.right,
+        header: options.pageSetup.margins.header ?? 708,
+        footer: options.pageSetup.margins.footer ?? 708,
+        gutter: options.pageSetup.margins.gutter ?? 0
+      }
+    : {
+        top: marginDxa,
+        bottom: marginDxa,
+        left: marginDxa,
+        right: marginDxa,
+        header: 708,
+        footer: 708,
+        gutter: 0
+      };
 
   const doc = new Document({
     title: documentTitle,
@@ -421,10 +465,32 @@ export async function exportTipTapJsonToDocx(
             font: TYPOGRAPHY.fontFamily.name,
             size: TYPOGRAPHY.body.halfPoints, // 12pt
             color: TYPOGRAPHY.body.colorHex
+          },
+          paragraph: {
+            spacing: {
+              line: TYPOGRAPHY.body.lineSpacingDxa,
+              after: TYPOGRAPHY.body.spaceAfterDxa
+            }
           }
         }
       },
       paragraphStyles: [
+        {
+          id: 'Normal',
+          name: 'Normal',
+          quickFormat: true,
+          run: {
+            font: TYPOGRAPHY.fontFamily.name,
+            size: TYPOGRAPHY.body.halfPoints,
+            color: TYPOGRAPHY.body.colorHex
+          },
+          paragraph: {
+            spacing: {
+              line: TYPOGRAPHY.body.lineSpacingDxa,
+              after: TYPOGRAPHY.body.spaceAfterDxa
+            }
+          }
+        },
         {
           id: 'Title',
           name: 'Title',
@@ -545,15 +611,10 @@ export async function exportTipTapJsonToDocx(
           page: {
             size: {
               orientation: isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
-              width: isLandscape ? TYPOGRAPHY.page.heightDxa : TYPOGRAPHY.page.widthDxa,
-              height: isLandscape ? TYPOGRAPHY.page.widthDxa : TYPOGRAPHY.page.heightDxa
+              width: exportWidth,
+              height: exportHeight
             },
-            margin: {
-              top: marginDxa,
-              bottom: marginDxa,
-              left: marginDxa,
-              right: marginDxa
-            }
+            margin: pageMargins
           }
         },
         children

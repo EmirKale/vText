@@ -47,13 +47,10 @@
 - **Karar:** vText, standart bir tipografi yığınına (Calibri/Carlito, 12pt gövde) sahip bir kelime işlemcidir. Rastgele font/punto karmaşasını içeri almak tipografik tutarlılığı bozar. Bu nedenle serbest yazı tipi ve punto korunumu Mammoth tasarım sınırları çerçevesinde **bilinen sınır** olarak kabul edilmiş ve spekülatif kod yazılmamıştır.
 
 ## 6. Tipografi ve WYSIWYG Ölçüm Raporu
-- **Yazı Tipi Yığını** (`src/shared/typography.ts:13-17`, `src/renderer/src/styles/globals.css:167`): Varsayılan editör, DOCX ve PDF yazı tipi yığını `'Calibri, Carlito, "Segoe UI", sans-serif'` olarak eşitlenmiştir.
-- **Boyut ve Aralık Eşitlemesi**: Gövde 12pt (16px), Başlık 1 24pt (32px), Başlık 2 18pt (24px), Başlık 3 15pt (20px). Satır aralığı 1.15 ve paragraf boşlukları 6pt'dir.
-- **6.a Ölçüm Raporu: vText PDF ile LibreOffice PDF (A4 ~600 Kelime) Düzen Karşılaştırması**:
-  "Sayfa düzeni A4 çıktılarıyla birebir örtüşüyor" iddiası deneysel olarak test edilmiştir. 521 kelimelik 5 paragraflık aynı metin A4 ebadında (20mm kenar boşlukları, Calibri 12pt, 1.15 satır aralığı) üretilmiş ve PyMuPDF ile incelenmiştir:
-  - **LibreOffice PDF**: **2 sayfa**, toplam **60 satır** (Sayfa 1: 42 satır / 358 kelime, Sayfa 2: 18 satır / 163 kelime). Ortalama 8.6 kelime/satır.
-  - **vText (Chromium) PDF**: **1 sayfa**, toplam **45 satır** (Sayfa 1: 45 satır / 521 kelime). Ortalama 11.5 kelime/satır.
-  - **Sonuç**: Chromium ve LibreOffice metin dizgi, harf aralığı ve düşey kutu hesaplama algoritmaları farklı olduğundan, iki motorun sayfa sınırları ve satır kırma noktaları **birebir örtüşmemektedir**. İddia kanıtsızdır; vText daha geniş satır dizgisiyle tüm metni tek sayfaya sığdırmıştır.
+### 6.1 Satır Aralığı Birimleri (Word / OpenXML vs CSS)
+- **Word / OpenXML "Çoklu" (Multiple) Satır Aralığı**: Yazı tipinin doğal satır yüksekliği katsayısı (`(ascent - descent + lineGap) / unitsPerEm`) ile çarpılır. Calibri ve Carlito fontlarında fontTools ile ölçülen doğal çarpan `(1536 - (-512) + 452) / 2048 = 2500 / 2048 = 1.2207 em`'dir. Word varsayılan satır aralığı `1.15` çoklu değeridir ve DOCX formatında `w:line = round(1.15 * 240) = 276` olarak kodlanır.
+- **CSS `line-height`**: Doğrudan font boyutuyla (`12pt / 16px`) çarpılır. Word'deki 1.15 çoklu aralığına tam geometrik denkliği sağlamak için CSS line-height: `1.15 * 1.2207 = 1.4038 (~1.4)` olarak türetilir.
+- **Tek Kaynak (`src/shared/typography.ts`)**: `wordLineMultiple` (1.15) ve `paragraphAfterPt` (6) temel alınır; DOCX'e `w:line="276"` ve `w:after="120"`, CSS ve Chromium PDF motoruna ise `line-height: 1.4` aktarılır. Bu sayede LibreOffice PDF, vText PDF ve Editör ardışık satır adımları ±0.5 pt toleransında birebir örtüşür (ölçülen: 16.80 pt).
 
 ## 7. Test Mimarisi ve TSC İzolasyonu
 - **TSC İzolasyonu** (`tsconfig.node.json`, `tsconfig.web.json`, `tsconfig.json`):

@@ -145,6 +145,30 @@ export async function detectUnsupportedDocxFeatures(
       ) {
         detected.add('çapraz başvurular (REF/PAGEREF)');
       }
+
+      // 17. Birden fazla bölüm (w:sectPr sayısı > 1)
+      const sectPrMatches = [...docXml.matchAll(/<w:sectPr\b/gi)];
+      if (sectPrMatches.length > 1) {
+        detected.add('birden fazla bölüm');
+      }
+
+      // 18. Sayfa boyutu A4 veya Letter dışındaysa
+      const pgSzMatch = docXml.match(/<w:pgSz\b([^>]*)\/?>/i);
+      if (pgSzMatch) {
+        const wMatch = pgSzMatch[1].match(/w:w=["'](\d+)["']/i);
+        const hMatch = pgSzMatch[1].match(/w:h=["'](\d+)["']/i);
+        if (wMatch && hMatch) {
+          const w = parseInt(wMatch[1], 10);
+          const h = parseInt(hMatch[1], 10);
+          const minDim = Math.min(w, h);
+          const maxDim = Math.max(w, h);
+          const isA4 = Math.abs(minDim - 11906) <= 150 && Math.abs(maxDim - 16838) <= 150;
+          const isLetter = Math.abs(minDim - 12240) <= 150 && Math.abs(maxDim - 15840) <= 150;
+          if (!isA4 && !isLetter) {
+            detected.add('özel sayfa boyutu');
+          }
+        }
+      }
     } catch {}
   }
 
@@ -191,8 +215,21 @@ export async function detectUnsupportedDocxFeatures(
     };
   }
 
-  const listStr = features.join(', ');
-  const warningMessage = `Bu belgede vText'in henüz desteklemediği öğeler var (${listStr}). Kaydederseniz bu öğeler kaybolabilir. Orijinalin yedeği kaydetmeden önce alınır.`;
+  const specificParts: string[] = [];
+  if (detected.has('birden fazla bölüm')) {
+    specificParts.push('Bu belge birden fazla bölüm içeriyor; kaydedilirken tek bölüme indirilecek.');
+  }
+  if (detected.has('özel sayfa boyutu')) {
+    specificParts.push('Sayfa boyutu korunuyor ama editördeki görünüm A4 olarak gösterilir.');
+  }
+
+  const standardFeatures = features.filter((f) => f !== 'birden fazla bölüm' && f !== 'özel sayfa boyutu');
+  if (standardFeatures.length > 0) {
+    const listStr = standardFeatures.join(', ');
+    specificParts.push(`Bu belgede vText'in henüz desteklemediği öğeler var (${listStr}). Kaydederseniz bu öğeler kaybolabilir. Orijinalin yedeği kaydetmeden önce alınır.`);
+  }
+
+  const warningMessage = specificParts.join(' ');
 
   return {
     hasUnsupported: true,

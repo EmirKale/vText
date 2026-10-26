@@ -1,5 +1,22 @@
 export type DocumentFormat = 'docx' | 'md' | 'txt' | 'html' | 'odt' | 'rtf' | 'doc' | 'pdf';
 
+export interface PageMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  header?: number;
+  footer?: number;
+  gutter?: number;
+}
+
+export interface PageSetup {
+  widthDxa: number;
+  heightDxa: number;
+  orientation?: 'portrait' | 'landscape';
+  margins: PageMargins;
+}
+
 export interface DocumentTab {
   id: string;
   title: string;
@@ -9,6 +26,7 @@ export interface DocumentTab {
   format: DocumentFormat;
   lastSavedAt?: number;
   unsupportedWarning?: string;
+  pageSetup?: PageSetup;
 }
 
 
@@ -97,6 +115,7 @@ export interface FileSaveResult {
   title?: string;
   error?: string;
   errorCode?: string;
+  fileName?: string;
   warning?: string;
   backupFileName?: string;
 }
@@ -112,6 +131,7 @@ export interface FileOpenResult {
   warning?: string;
   unsupportedWarning?: string;
   unsupportedFeatures?: string[];
+  pageSetup?: PageSetup;
 }
 
 export interface ShowSaveDialogResult {

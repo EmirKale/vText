@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import mammoth from 'mammoth';
-import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult } from '../shared/types';
+import { DocumentFormat, FileOpenResult, FileSaveResult, ShowSaveDialogResult, PageSetup } from '../shared/types';
 import { convertWithPandocOrLibreOffice } from './convert';
 import { documentRegistry, normalizePath } from './registry';
 import {
@@ -14,6 +14,90 @@ import {
 import MarkdownIt from 'markdown-it';
 import JSZip from 'jszip';
 import { detectUnsupportedDocxFeatures } from './docxFeatureDetector';
+
+export async function extractPageSetupFromDocx(zip: JSZip): Promise<PageSetup | undefined> {
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return undefined;
+  try {
+    const docXml = await docFile.async('string');
+    const sectMatches = [...docXml.matchAll(/<w:sectPr\b([\s\S]*?)<\/w:sectPr>/gi)];
+    if (sectMatches.length === 0) return undefined;
+    const lastSect = sectMatches[sectMatches.length - 1][1];
+
+    const pgSzMatch = lastSect.match(/<w:pgSz\b([^>]*)\/?>/i);
+    const pgMarMatch = lastSect.match(/<w:pgMar\b([^>]*)\/?>/i);
+
+    let widthDxa = 11906; // A4
+    let heightDxa = 16838;
+    let orientAttr: string | undefined;
+
+    if (pgSzMatch) {
+      const attrs = pgSzMatch[1];
+      const wMatch = attrs.match(/w:w=["'](\d+)["']/i);
+      const hMatch = attrs.match(/w:h=["'](\d+)["']/i);
+      const oMatch = attrs.match(/w:orient=["']([^"']+)["']/i);
+      if (wMatch) widthDxa = parseInt(wMatch[1], 10);
+      if (hMatch) heightDxa = parseInt(hMatch[1], 10);
+      if (oMatch) orientAttr = oMatch[1].toLowerCase();
+    }
+
+    let orientation: 'portrait' | 'landscape' = 'portrait';
+    if (orientAttr === 'landscape' || widthDxa > heightDxa) {
+      orientation = 'landscape';
+      if (widthDxa < heightDxa) {
+        const tmp = widthDxa;
+        widthDxa = heightDxa;
+        heightDxa = tmp;
+      }
+    } else {
+      orientation = 'portrait';
+      if (widthDxa > heightDxa) {
+        const tmp = widthDxa;
+        widthDxa = heightDxa;
+        heightDxa = tmp;
+      }
+    }
+
+    const margins = {
+      top: 1440,
+      right: 1440,
+      bottom: 1440,
+      left: 1440,
+      header: 708,
+      footer: 708,
+      gutter: 0
+    };
+
+    if (pgMarMatch) {
+      const attrs = pgMarMatch[1];
+      const tMatch = attrs.match(/w:top=["'](\d+)["']/i);
+      const rMatch = attrs.match(/w:right=["'](\d+)["']/i);
+      const bMatch = attrs.match(/w:bottom=["'](\d+)["']/i);
+      const lMatch = attrs.match(/w:left=["'](\d+)["']/i);
+      const hMatch = attrs.match(/w:header=["'](\d+)["']/i);
+      const fMatch = attrs.match(/w:footer=["'](\d+)["']/i);
+      const gMatch = attrs.match(/w:gutter=["'](\d+)["']/i);
+
+      if (tMatch) margins.top = parseInt(tMatch[1], 10);
+      if (rMatch) margins.right = parseInt(rMatch[1], 10);
+      if (bMatch) margins.bottom = parseInt(bMatch[1], 10);
+      if (lMatch) margins.left = parseInt(lMatch[1], 10);
+      if (hMatch) margins.header = parseInt(hMatch[1], 10);
+      if (fMatch) margins.footer = parseInt(fMatch[1], 10);
+      if (gMatch) margins.gutter = parseInt(gMatch[1], 10);
+    }
+
+    return {
+      widthDxa,
+      heightDxa,
+      orientation,
+      margins
+    };
+  } catch (err) {
+    console.warn('[files] extractPageSetupFromDocx hatası:', err);
+    return undefined;
+  }
+}
 
 const backedUpPaths = new Set<string>();
 
@@ -350,6 +434,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
 
       let unsupportedWarning: string | undefined;
       let unsupportedFeatures: string[] | undefined;
+      let pageSetup: PageSetup | undefined;
       if (zip) {
         try {
           const unsupportedInfo = await detectUnsupportedDocxFeatures(zip, mammothResult.messages);
@@ -357,6 +442,7 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
             unsupportedWarning = unsupportedInfo.warningMessage;
             unsupportedFeatures = unsupportedInfo.features;
           }
+          pageSetup = await extractPageSetupFromDocx(zip);
         } catch (detErr) {
           console.warn('[files:openFileByPath] Desteklenmeyen öğe tespiti hatası:', detErr);
         }
@@ -375,7 +461,8 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
         format: 'docx',
         warning: unsupportedWarning || (mammothResult.messages.length > 0 ? mammothResult.messages.map((m) => m.message).join('\n') : undefined),
         unsupportedWarning,
-        unsupportedFeatures
+        unsupportedFeatures,
+        pageSetup
       };
     }
 
@@ -384,6 +471,12 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
       const converted = await convertWithPandocOrLibreOffice(filePath, 'docx');
       if (converted.success && converted.outputPath) {
         const buffer = await fs.promises.readFile(converted.outputPath);
+        let convertedPageSetup: PageSetup | undefined;
+        try {
+          const convZip = await JSZip.loadAsync(buffer);
+          convertedPageSetup = await extractPageSetupFromDocx(convZip);
+        } catch {}
+
         const mammothResult = await mammoth.convertToHtml(
           { buffer },
           {
@@ -402,7 +495,8 @@ export async function openFileByPath(filePath: string): Promise<FileOpenResult> 
           docId: entry.docId,
           title: entry.title,
           content: normalizeMammothHtml(mammothResult.value),
-          format: ext
+          format: ext,
+          pageSetup: convertedPageSetup
         };
       } else {
         return {
@@ -488,6 +582,40 @@ export async function showSaveFilePicker(
   };
 }
 
+function getActiveWindow(targetWindow?: BrowserWindow): BrowserWindow | undefined {
+  if (targetWindow) return targetWindow;
+  try {
+    if (typeof BrowserWindow !== 'undefined' && BrowserWindow && typeof BrowserWindow.getFocusedWindow === 'function') {
+      return BrowserWindow.getFocusedWindow() ?? (typeof BrowserWindow.getAllWindows === 'function' ? BrowserWindow.getAllWindows()[0] : undefined);
+    }
+  } catch {}
+  return undefined;
+}
+
+async function atomicRenameWithRetry(
+  tempPath: string,
+  targetPath: string,
+  maxRetries = 3,
+  delays = [50, 150, 400]
+): Promise<void> {
+  let attempt = 0;
+  while (true) {
+    try {
+      await fs.promises.rename(tempPath, targetPath);
+      return;
+    } catch (err: any) {
+      const isLockError = err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES';
+      if (isLockError && attempt < maxRetries) {
+        const delay = delays[attempt] ?? 400;
+        attempt++;
+        await new Promise((res) => setTimeout(res, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function saveFile(
   docId: string,
   content: string | Buffer | Uint8Array,
@@ -558,11 +686,13 @@ export async function saveFile(
     };
   }
 
-  // DIŞ DEĞİŞİKLİK KORUMASI (H5):
+  // DIŞ DEĞİŞİKLİK KORUMASI (H5 & J5):
   // Dosya vText'te açıkken başka program değiştirirse:
   // Açılışta diskteki mtime ve SHA-256 kaydedilmiştir.
   // Kaydetmeden önce aynı değerlerle karşılaştır.
-  // Farklıysa sor: "Bu dosya vText dışında değiştirilmiş. Üzerine yaz / Farklı kaydet / İptal" (varsayılan İptal).
+  // Farklıysa sor: "Bu dosya vText dışında değiştirilmiş."
+  const canonKey = normalizePath(entry.filePath);
+
   if (
     entry.openedFromDisk &&
     fs.existsSync(entry.filePath) &&
@@ -576,13 +706,13 @@ export async function saveFile(
         const currentSha = computeBufferSha256(currentBytes);
         if (currentSha !== entry.diskSha256) {
           console.warn(`[saveFile] Dış değişiklik tespit edildi (${entry.filePath})`);
-          const win = targetWindow || (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]);
+          const win = getActiveWindow(targetWindow);
           if (win) {
             const choice = await dialog.showMessageBox(win, {
               type: 'warning',
               title: 'Dosya Dışarıda Değiştirilmiş',
               message: 'Bu dosya vText dışında değiştirilmiş.',
-              detail: 'Bu dosya vText dışında değiştirilmiş. Üzerine yaz / Farklı kaydet / İptal',
+              detail: 'Dosya vText\'te açıldığından beri başka bir program onu değiştirmiş. Üzerine yazarsanız o değişiklikler kaybolur.',
               buttons: ['Üzerine yaz', 'Farklı kaydet', 'İptal'],
               defaultId: 2,
               cancelId: 2,
@@ -608,7 +738,9 @@ export async function saveFile(
               }
               return saveFile(savePickerRes.docId, content, win);
             }
-            // choice.response === 0: 'Üzerine yaz' -> kaydetmeye devam et
+            // choice.response === 0: 'Üzerine yaz' -> dışarıda değiştirilen sürümün yedeğini alıp kaydetmeye devam et
+            backedUpPaths.delete(canonKey);
+            entry.wasLastSavedByVText = false;
           }
         }
       }
@@ -617,10 +749,11 @@ export async function saveFile(
     }
   }
 
-  // GRUP 4: Diskten açılmış bir dosya ilk kez vText tarafından kaydedilirken,
+  // GRUP 4 & J6: Diskten açılmış bir dosya ilk kez vText tarafından kaydedilirken
+  // veya dış değişiklik sonrası "Üzerine yaz" seçildiğinde,
   // yazmadan ÖNCE orijinalin kopyasını aynı klasöre "Ad (vText öncesi yedek).uzantı" olarak yaz.
   // Oturum başına dosya başına bir kez; aynı adlı yedek varsa üzerine yazma (sayı ekle). COPYFILE_EXCL kullan.
-  const canonKey = normalizePath(entry.filePath);
+  // J6: Aynı SHA-256'lı yedek varsa yeniden kullan, gereksiz (yedek 2) üretme.
   let backupFileName: string | undefined;
 
   const shouldSkipBackup = entry.wasLastSavedByVText === true || backedUpPaths.has(canonKey);
@@ -638,6 +771,23 @@ export async function saveFile(
         const candidateName = `${baseName}${suffix}${ext}`;
         const candidatePath = path.join(dir, candidateName);
 
+        if (fs.existsSync(candidatePath)) {
+          try {
+            const existingBackupBytes = await fs.promises.readFile(candidatePath);
+            const existingSha = computeBufferSha256(existingBackupBytes);
+            const diskBytes = await fs.promises.readFile(entry.filePath);
+            const currentDiskSha = computeBufferSha256(diskBytes);
+            if (existingSha === currentDiskSha) {
+              backupSuccess = true;
+              backupFileName = candidateName;
+              backedUpPaths.add(canonKey);
+              break;
+            }
+          } catch {}
+          counter++;
+          continue;
+        }
+
         try {
           await fs.promises.copyFile(entry.filePath, candidatePath, fs.constants.COPYFILE_EXCL);
           backupSuccess = true;
@@ -653,7 +803,7 @@ export async function saveFile(
       }
     } catch (backupErr: any) {
       console.error(`[saveFile] Yedek oluşturulamadı (${entry.filePath}):`, backupErr);
-      const win = targetWindow || (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]);
+      const win = getActiveWindow(targetWindow);
       if (win) {
         const choice = await dialog.showMessageBox(win, {
           type: 'warning',
@@ -700,8 +850,8 @@ export async function saveFile(
     await fileHandle.close();
     fileHandle = null;
 
-    // Atomic replace on same filesystem
-    await fs.promises.rename(tempPath, entry.filePath);
+    // Atomic replace on same filesystem with retry for temporary locks (EPERM, EBUSY, EACCES)
+    await atomicRenameWithRetry(tempPath, entry.filePath);
     documentRegistry.update(docId, { lastSavedAt: Date.now() });
 
     try {
@@ -728,6 +878,7 @@ export async function saveFile(
       try {
         await fileHandle.close();
       } catch {}
+      fileHandle = null;
     }
     try {
       if (fs.existsSync(tempPath)) {
@@ -735,17 +886,94 @@ export async function saveFile(
       }
     } catch {}
 
+    const fileName = path.basename(entry.filePath);
+    const win = getActiveWindow(targetWindow);
+    const isLockError = err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES';
+
+    if (isLockError) {
+      if (win) {
+        const choice = await dialog.showMessageBox(win, {
+          type: 'error',
+          title: 'Dosya kaydedilemedi',
+          message:
+            'Dosya başka bir programda (örneğin Word veya LibreOffice) açık olabilir ya da yazma izniniz yok. O programda dosyayı kapatıp tekrar deneyin veya Farklı Kaydet ile yeni bir ad verin.',
+          detail: `${err.code || 'EPERM'}, ${err.syscall || 'rename'}\nDosya: ${fileName}`,
+          buttons: ['Tekrar dene', 'Farklı kaydet', 'İptal'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true
+        });
+
+        if (choice.response === 0) {
+          // Tekrar dene
+          return saveFile(docId, content, win);
+        } else if (choice.response === 1) {
+          // Farklı kaydet
+          const savePickerRes = await showSaveFilePicker(win, entry.title, entry.format);
+          if (savePickerRes.canceled || !savePickerRes.docId) {
+            return {
+              success: false,
+              error: 'Kayıt iptal edildi: Farklı kaydetme işlemi iptal edildi.',
+              errorCode: 'ERR_SAVE_AS_CANCELLED',
+              fileName
+            };
+          }
+          return saveFile(savePickerRes.docId, content, win);
+        } else {
+          // İptal (choice.response === 2)
+          return {
+            success: false,
+            error: 'Dosya başka bir programda (örneğin Word veya LibreOffice) açık olabilir ya da yazma izniniz yok.',
+            errorCode: 'ERR_LOCKED_BY_ANOTHER_PROCESS',
+            fileName
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: 'Dosya başka bir programda (örneğin Word veya LibreOffice) açık olabilir ya da yazma izniniz yok.',
+        errorCode: 'ERR_PERMISSION_DENIED',
+        fileName
+      };
+    }
+
+    let userMessage = 'Dosya kaydedilirken beklenmeyen bir hata oluştu.';
     let errorCode = 'ERR_WRITE_FAILED';
-    if (err.code === 'ENOENT') {
+
+    if (err.code === 'ENOSPC') {
+      userMessage = 'Diskte yeterli boş alan yok. Lütfen diskte yer açıp tekrar deneyin.';
+      errorCode = 'ERR_DISK_FULL';
+    } else if (err.code === 'ENOENT') {
+      userMessage = 'Dosyanın kaydedileceği klasör bulunamadı veya silinmiş.';
       errorCode = 'ERR_DIR_NOT_FOUND';
-    } else if (err.code === 'EACCES' || err.code === 'EPERM' || err.code === 'EROFS') {
-      errorCode = 'ERR_PERMISSION_DENIED';
+    } else if (err.code === 'EROFS') {
+      userMessage = 'Dosyanın bulunduğu sürücü salt okunur.';
+      errorCode = 'ERR_READ_ONLY_FS';
+    } else if (err.code === 'ENAMETOOLONG') {
+      userMessage = 'Dosya adı veya yolu sistem sınırından çok uzun.';
+      errorCode = 'ERR_NAME_TOO_LONG';
+    }
+
+    if (win) {
+      try {
+        await dialog.showMessageBox(win, {
+          type: 'error',
+          title: 'Dosya kaydedilemedi',
+          message: userMessage,
+          detail: `${err.code || 'HATA'}, ${err.syscall || 'yazma'}\nDosya: ${fileName}`,
+          buttons: ['Tamam'],
+          defaultId: 0,
+          noLink: true
+        });
+      } catch {}
     }
 
     return {
       success: false,
-      error: err.message || 'Dosya kaydedilemedi.',
-      errorCode
+      error: userMessage,
+      errorCode,
+      fileName
     };
   }
 }

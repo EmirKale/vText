@@ -27,13 +27,16 @@ export function isValidSmokeTestOutPath(filePath: string | null | undefined): bo
 
 /**
  * Validates the --smoke-test-open target path.
- * Must end with .docx and resolve strictly within os.tmpdir().
+ * Must end with .docx, .md, or .txt and resolve strictly within os.tmpdir().
  */
 export function isValidSmokeTestOpenPath(filePath: string | null | undefined): boolean {
   if (!filePath) return false;
   try {
     const trimmed = filePath.trim();
-    if (!trimmed.toLowerCase().endsWith('.docx')) return false;
+    const lower = trimmed.toLowerCase();
+    if (!lower.endsWith('.docx') && !lower.endsWith('.md') && !lower.endsWith('.txt')) {
+      return false;
+    }
 
     const resolved = path.resolve(trimmed);
     const resolvedTmp = path.resolve(os.tmpdir());

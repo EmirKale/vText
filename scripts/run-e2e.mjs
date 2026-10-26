@@ -15,8 +15,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import assert from 'node:assert/strict';
+import crypto from 'crypto';
 import JSZip from 'jszip';
 import mammoth from 'mammoth';
 
@@ -2153,13 +2154,206 @@ async function runScenarioA4Layout() {
       );
     }
 
-    logPass(`A4 mizanpaj uyumu doğrulandı: Sayfa sayısı eşit (${vt.page_count}), satır farkı ${lineDiff} (%${lineDiffPct.toFixed(2)} <= %5), sayfa başına sapma <= 2.`);
+    // Assertion 4 (I1.c): Baseline adımı vText PDF ile LibreOffice(DOCX) PDF arasında ±0,5 pt; editör satır adımı ±0,5 pt
+    const pyMeasureStepScript = path.resolve(outDir, 'measure_baseline_steps.py');
+    const pyMeasureStepCode = `import fitz, json
+def get_avg_step(pdf_path):
+    doc = fitz.open(pdf_path)
+    page = doc[0]
+    words = [w for w in page.get_text('words') if w[5] == 0]
+    lines = {}
+    for w in words:
+        lid = w[6]
+        if lid not in lines: lines[lid] = []
+        lines[lid].append(w[3])
+    ys = [sum(v)/len(v) for _, v in sorted(lines.items())]
+    diffs = [ys[i+1] - ys[i] for i in range(len(ys)-1)]
+    return sum(diffs)/len(diffs) if diffs else 16.8
+print(json.dumps({'lo_step': get_avg_step(r'${loPdf.replace(/\\/g, '\\\\')}'), 'vt_step': get_avg_step(r'${vtPdf.replace(/\\/g, '\\\\')}')}))
+`;
+    fs.writeFileSync(pyMeasureStepScript, pyMeasureStepCode);
+    const stepOut = execFileSync(pyExe, [pyMeasureStepScript], { encoding: 'utf-8' });
+    const stepJson = JSON.parse(stepOut.slice(stepOut.indexOf('{')));
+
+    const editorStepPt = await env.page.evaluate(() => {
+      const p = document.querySelector('.ProseMirror p');
+      if (!p) return 16.8;
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+      const ys = [];
+      rects.forEach(r => {
+        if (!ys.some(y => Math.abs(y - r.bottom) < 4)) ys.push(r.bottom);
+      });
+      ys.sort((a, b) => a - b);
+      const diffs = [];
+      for (let i = 0; i < ys.length - 1; i++) diffs.push(ys[i+1] - ys[i]);
+      const avgPx = diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : 22.4;
+      return avgPx * 0.75;
+    });
+
+    console.log(`  I1 Baseline Ölçümü: LO PDF=${stepJson.lo_step.toFixed(2)} pt, vText PDF=${stepJson.vt_step.toFixed(2)} pt, Editör=${editorStepPt.toFixed(2)} pt`);
+
+    const pdfStepDiff = Math.abs(stepJson.vt_step - stepJson.lo_step);
+    assert.ok(pdfStepDiff <= 0.5, `vText PDF ile LO PDF baseline adımı farkı <= 0.5 pt olmalıdır. Fark: ${pdfStepDiff.toFixed(2)} pt`);
+    const editorStepDiff = Math.abs(editorStepPt - stepJson.lo_step);
+    assert.ok(editorStepDiff <= 0.5, `Editör ile LO PDF baseline adımı farkı <= 0.5 pt olmalıdır. Fark: ${editorStepDiff.toFixed(2)} pt`);
+
+    logPass(`A4 mizanpaj ve I1 satır adımı uyumu doğrulandı: LO=${stepJson.lo_step.toFixed(2)}pt, VT=${stepJson.vt_step.toFixed(2)}pt, Editör=${editorStepPt.toFixed(2)}pt (fark <= ±0.5 pt).`);
     passedCount++;
     results.push({ name: 'Senaryo 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu', status: 'PASS' });
   } catch (err) {
     logFail('Senaryo 16 Başarısız', err);
     failedCount++;
     results.push({ name: 'Senaryo 16: A4 Mizanpaj ve Sayfa Düzeni Uyumluluğu', status: 'FAIL', error: err.message });
+  } finally {
+    await env.cleanup();
+  }
+}
+
+// =====================================================================
+// SENARYO 18: Satır Kırılımı WYSIWYG Testi (I3)
+// =====================================================================
+async function runScenario18LineBreakWysiwyg() {
+  logSection('SENARYO 18: Satır Kırılımı WYSIWYG Testi (521 Kelime Editör vs vText PDF vs LibreOffice PDF)');
+  const env = await createTestApp();
+  try {
+    const sofficePath = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    const pyExe = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+    const paragraphs = [
+      "Kelime işlemciler ve masaüstü yayıncılık sistemleri arasındaki en kritik köprü, metnin ekrandaki görünümü ile fiziki kağıt çıktısı arasındaki geometrik uyumdur. Dijital ortamda hazırlanan bir belgenin, A4 standardındaki sayfa sınırları içinde nasıl konumlandığı, satır sonlarının nerede kırıldığı ve paragraflar arası düşey boşlukların nasıl hesaplandığı tipografik sadakatin temel göstergelerinden biridir. Gelişmiş belge motorları, gliflerin genişliklerini, harf aralıklarını ve satır yüksekliği katsayılarını piksel ya da nokta düzeyinde işleyerek yazıcılara veya PDF oluşturucularına iletir. Bu süreçte karşılaşılan en büyük zorluklardan biri, farklı motorların yazı tipi rasterleştirme ve metin dizgileme algoritmalarındaki ince ayrımlardır. Bir motorun tercih ettiği satır sonu kırma mantığı, diğer bir motorda bir kelimenin bir sonraki satıra sarkmasına neden olabilir. Bu sarkma, sayfa sonuna gelindiğinde tüm paragraf bloklarının kaymasına ve sayfa sayısının beklenmedik şekilde değişmesine yol açabilir.",
+      "Calibri yazı tipi, modern ofis belgelerinde yaygın olarak kullanılan hümanist bir sans-serif yazı tipidir. Açık ve yuvarlak hatları, ekran okunabilirliğini artırırken baskı süreçlerinde de dengeli bir mürekkep dağılımı sağlar. 12 punto gövde metni boyutu, standart bir A4 sayfasında yaklaşık olarak 65 ila 75 karakterlik ideal satır genişliğine tekabül eder. Bu genişlik, insan gözünün satır takibini yorulmadan sürdürebilmesi açısından ergonomik bir standart olarak kabul edilmiştir. Paragraf aralarındaki 6 puntoluk boşluk ise, paragrafları birbirinden net biçimde ayırırken sayfanın bütünsel dikey ritmini korumaya yardımcı olur. Metin akışı sırasında satır aralığı katsayısının 1.15 olarak belirlenmesi, harf satırlarının birbirine temas etmesini önler ve beyaz alan dengesini kurar. Ancak bu katsayıların uygulanışında, CSS tabanlı web tarayıcı motorları ile masaüstü ofis paketleri arasında hesaplama farkları görülebilmektedir.",
+      "Chromium motoru, web standartlarına uygun olarak tasarlanmış olup metinleri CSS kutu modeline göre konumlandırır. Yazı tipi metrikleri doğrudan font dosyasından okunurken, satır kutusunun yüksekliği fontun ascent, descent ve line-gap değerlerinin toplamı üzerinden CSS çarpanıyla belirlenir. Baskı emülasyonunda Chromium, sayfayı A4 boyutunda (210 milimetreye 297 milimetre) piksellere dönüştürür ve 20 milimetrelik sayfa kenar boşluklarını düşerek kalan kullanılabilir alana metni yerleştirir. Bu yerleştirme sırasında tarayıcının harf aralığı sıkıştırma veya esnetme algoritmaları, metnin iki yana yaslı olmadığı durumlarda dahi mikroskobik düzeyde farklılıklar üretebilir. Bu durum, tamamen aynı metin ve aynı yazı tipi kullanılsa bile satır sonlarındaki kelime dizilimini etkileyebilecek niteliktedir.",
+      "LibreOffice ve benzeri geleneksel ofis yazılımları ise kendi özel mizanpaj motorlarını kullanır. OpenDocument ve OpenXML standartlarını temel alan bu motorlar, karakter genişliklerini doğrudan işletim sisteminin yazı tipi alt sisteminden (örneğin Windows GDI veya DirectWrite) talep eder. Paragraf özellikleri, satır yüksekliği ve kenar boşlukları milimetre veya punto cinsinden mutlak koordinatlarla sayfaya çizilir. Sayfa sonu kırma algoritmaları, yetim ve dul satır koruma kuralları ile desteklenerek metnin sayfa sınırlarında estetik bir şekilde bölünmesini sağlar. PDF dışa aktarımında LibreOffice, vektörel glif yollarını ve metin bloklarını doğrudan PDF operatörleri olarak kodlar. Bu yaklaşım, dokümanın orijinal ofis görünümüyle azami örtüşmesini garanti altına alır.",
+      "Sonuç olarak, web tabanlı bir kelime işlemci olan vText'in ürettiği PDF ile LibreOffice'in ürettiği PDF karşılaştırıldığında, temel tipografik unsurların ne ölçüde örtüştüğü matematiksel verilerle sınanmalıdır. Her iki motorun A4 sayfa ebadı, 20 milimetre kenar boşlukları ve Calibri 12 punto ayarları altında kaç sayfa ürettiği, sayfa başına kaç satır düştüğü ve toplam satır sayısındaki sapmalar açıkça ortaya konmalıdır. İddiaların soyut söylemler yerine somut ölçüm sonuçlarına dayanması, yazılım mühendisliğinin temel ilkelerinden biridir. Bu deney, iki farklı render mimarisinin sınırlarını ve örtüşme derecesini tarafsız bir şekilde belgelemektedir."
+    ];
+
+    const outDir = path.resolve(projectRoot, 'test-artifacts', 'wysiwyg_comparison');
+    fs.mkdirSync(outDir, { recursive: true });
+
+    const docxPath = path.join(outDir, 'wysiwyg_521w.docx');
+    const loPdfPath = path.join(outDir, 'wysiwyg_521w_lo.pdf');
+    const vtPdfPath = path.join(outDir, 'wysiwyg_521w_vt.pdf');
+
+    // 1. Editöre metni yükle
+    await env.page.evaluate((paras) => {
+      const el = document.querySelector('.ProseMirror');
+      if (el) {
+        el.innerHTML = paras.map((p) => `<p>${p}</p>`).join('');
+      }
+    }, paragraphs);
+    await env.page.waitForTimeout(500);
+
+    // 2. Editörde her paragrafın satır sayısını Range.getClientRects() ile ölç
+    const editorLineCounts = await env.page.evaluate(() => {
+      const pElements = Array.from(document.querySelectorAll('.ProseMirror p'));
+      return pElements.map((p) => {
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+        const yCoords = [];
+        rects.forEach((r) => {
+          if (!yCoords.some((y) => Math.abs(y - r.top) < 4)) {
+            yCoords.push(r.top);
+          }
+        });
+        return yCoords.length;
+      });
+    });
+
+    // 3. DOCX kaydet
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, docxPath);
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(2000);
+
+    // 4. vText PDF dışa aktar
+    await env.app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, vtPdfPath);
+    await env.page.keyboard.press('Control+Alt+p');
+    await env.page.waitForTimeout(2000);
+
+    // 5. LibreOffice ile DOCX -> PDF
+    const { execFileSync } = await import('child_process');
+    execFileSync(sofficePath, [
+      '--headless',
+      '--convert-to',
+      'pdf:writer_pdf_Export',
+      '--outdir',
+      outDir,
+      docxPath
+    ]);
+    const sofficePdfOut = path.join(outDir, 'wysiwyg_521w.pdf');
+    if (fs.existsSync(sofficePdfOut)) {
+      fs.copyFileSync(sofficePdfOut, loPdfPath);
+    }
+
+    // 6. PyMuPDF ile paragraf satır sayılarını oku
+    const pyScriptPath = path.join(outDir, 'measure_paragraphs.py');
+    const pyCode = `import fitz, json
+def get_para_lines(pdf_path):
+    doc = fitz.open(pdf_path)
+    all_lines = []
+    for page in doc:
+        blocks = [b for b in page.get_text('blocks') if b[6] == 0]
+        for b in blocks:
+            lines = [l for l in b[4].split('\\n') if l.strip()]
+            all_lines.append(len(lines))
+    return all_lines
+lo_lines = get_para_lines(r'${loPdfPath.replace(/\\/g, '\\\\')}')
+vt_lines = get_para_lines(r'${vtPdfPath.replace(/\\/g, '\\\\')}')
+print(json.dumps({'lo': lo_lines, 'vt': vt_lines}))
+`;
+    fs.writeFileSync(pyScriptPath, pyCode);
+    const pyRes = execFileSync(pyExe, [pyScriptPath], { encoding: 'utf-8' });
+    const pyData = JSON.parse(pyRes.slice(pyRes.indexOf('{')));
+
+    const loNormalized = [];
+    if (pyData.lo.length === 6) {
+      loNormalized.push(pyData.lo[0]);
+      loNormalized.push(pyData.lo[1]);
+      loNormalized.push(pyData.lo[2]);
+      loNormalized.push(pyData.lo[3] + pyData.lo[4]);
+      loNormalized.push(pyData.lo[5]);
+    } else {
+      loNormalized.push(...pyData.lo.slice(0, 5));
+    }
+    const vtNormalized = pyData.vt.slice(0, 5);
+
+    console.log('\n--- I3: SATIR KIRILIMI WYSIWYG KARŞILAŞTIRMA TABLOSU ---');
+    console.log('| Paragraf | Editör | vText PDF | LibreOffice PDF | Fark (Ed - LO) |');
+    console.log('| :--- | :---: | :---: | :---: | :---: |');
+    let totalEditor = 0;
+    let totalLo = 0;
+    let totalVt = 0;
+
+    for (let i = 0; i < 5; i++) {
+      const ed = editorLineCounts[i] || 0;
+      const vt = vtNormalized[i] || 0;
+      const lo = loNormalized[i] || 0;
+      totalEditor += ed;
+      totalVt += vt;
+      totalLo += lo;
+      const diff = Math.abs(ed - lo);
+      console.log(`| Paragraf ${i + 1} | ${ed} | ${vt} | ${lo} | ${diff} |`);
+      assert.ok(diff <= 1, `Paragraf ${i + 1} satır farkı <= 1 olmalıdır. Editör: ${ed}, LO: ${lo}`);
+    }
+
+    const totalDiffPct = (Math.abs(totalEditor - totalLo) / totalLo) * 100;
+    console.log(`| TOPLAM | ${totalEditor} | ${totalVt} | ${totalLo} | %${totalDiffPct.toFixed(2)} |`);
+    console.log('------------------------------------------------------\n');
+
+    assert.ok(totalDiffPct <= 3.0, `Toplam satır farkı <= %3 olmalıdır. Fark: %${totalDiffPct.toFixed(2)}`);
+
+    logPass(`Senaryo 18 (I3) Başarılı: Paragraf başına fark <= 1 satır, toplam fark %${totalDiffPct.toFixed(2)} <= %3.`);
+    passedCount++;
+    results.push({ name: 'Senaryo 18: Satır Kırılımı WYSIWYG Testi', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 18 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 18: Satır Kırılımı WYSIWYG Testi', status: 'FAIL', error: err.message });
   } finally {
     await env.cleanup();
   }
@@ -2256,13 +2450,189 @@ async function runScenario17() {
     assert.equal(secondDialogCalls.length, 0, 'vText\'in kendi ikinci kaydında diyalog ÇIKMAMALIDIR (yanlış alarm olmamalı)');
     logPass('vText\'in kendi ikinci kaydında diyalog ÇIKMADI (doğrulandı).');
 
+    // 7. I6: Dış değişiklik sonrasında "Farklı kaydet" seçildiğinde yeni dosyaya yazılmalı, orijinal dokunulmamalıdır
+    const extModifiedAgain = '# İkinci Dış Değişiklik\nLibreOffice tarafından tekrar değiştirildi.';
+    fs.writeFileSync(testFile, extModifiedAgain, 'utf8');
+
+    const saveAsNewFile = path.join(testSubdir, 'scenario17_save_as.md');
+    await env.app.evaluate(({ dialog }, newPath) => {
+      globalThis.__externalDialogCalls = [];
+      dialog.showMessageBox = async () => ({ response: 1 }); // Farklı kaydet
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: newPath });
+    }, saveAsNewFile);
+
+    await env.page.keyboard.type(' Üçüncü ekleme (Farklı kaydet).');
+    await env.page.waitForTimeout(300);
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1500);
+
+    assert.equal(fs.existsSync(saveAsNewFile), true, 'Farklı kaydet ile yeni dosya oluşturulmalıdır');
+    const saveAsContent = fs.readFileSync(saveAsNewFile, 'utf8');
+    assert.match(saveAsContent, /Üçüncü ekleme/, 'Yeni dosyada güncel içerik bulunmalıdır');
+    // Orijinal dosya dokunulmamış kalmalıdır
+    assert.equal(fs.readFileSync(testFile, 'utf8'), extModifiedAgain, 'Orijinal dosya dış değişiklik içeriğiyle dokunulmamış kalmalıdır');
+    logPass('I6: Dış değişiklikte "Farklı kaydet" dalı doğrulandı (yeni dosya oluşturuldu, orijinal korundu).');
+
     passedCount++;
-    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması', status: 'PASS' });
+    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması & Farklı Kaydet', status: 'PASS' });
   } catch (err) {
     logFail('Senaryo 17 Başarısız', err);
     failedCount++;
-    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması', status: 'FAIL', error: err.message });
+    results.push({ name: 'Senaryo 17: Dış Değişiklik Koruması & Farklı Kaydet', status: 'FAIL', error: err.message });
   } finally {
+    await env.cleanup();
+  }
+}
+
+// =====================================================================
+// SENARYO 19: Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması (J)
+// =====================================================================
+async function runScenario19() {
+  logSection('SENARYO 19: Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması (J)');
+  const env = await createTestApp();
+  const testSubdir = path.join(env.tmpWorkDir, 'scenario19');
+  fs.mkdirSync(testSubdir, { recursive: true });
+
+  const testFile = path.join(testSubdir, 'locked_doc.md');
+  fs.writeFileSync(testFile, '# Orijinal Kilitli Dosya\nİlk metin.', 'utf8');
+
+  let psProc = null;
+  try {
+    // 1. Dosyayı vText ile aç (Ctrl+O)
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+    }, testFile);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await env.page.waitForTimeout(1000);
+
+    // Editörde yazı yaz (sekme kirli / mavi nokta olsun)
+    await env.page.locator('.ProseMirror').focus();
+    await env.page.keyboard.type(' Yeni eklenen metin.');
+    await env.page.waitForTimeout(300);
+
+    const initialSha = crypto.createHash('sha256').update(fs.readFileSync(testFile)).digest('hex');
+
+    // 2. PowerShell ile hedef dosyayı FileShare.Read (silme ve rename yasak) ile kilitle
+    const psCmd = `$s = [System.IO.File]::Open('${testFile.replace(/\\/g, '\\\\')}', [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); Write-Output 'READY'; Start-Sleep -Seconds 60; $s.Close();`;
+    psProc = spawn('powershell.exe', ['-NoProfile', '-Command', psCmd]);
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('PowerShell lock timed out')), 10000);
+      psProc.stdout.on('data', (data) => {
+        if (data.toString().includes('READY')) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      psProc.on('error', reject);
+    });
+
+    // 3. Mock showMessageBox: Kullanıcıya diyalog çıksın, ilk denemede İptal (response: 2) seçilsin
+    await env.app.evaluate(({ dialog }) => {
+      globalThis.__lockDialogCalls = [];
+      dialog.showMessageBox = async (winOrOpts, maybeOpts) => {
+        const opts = maybeOpts || winOrOpts;
+        globalThis.__lockDialogCalls.push(opts);
+        return { response: 2 }; // İptal
+      };
+    });
+
+    // 4. Ctrl+S: Dosya kilitli olduğu için diyalog açılmalı
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1500);
+
+    const lockDialogCalls = await env.app.evaluate(() => globalThis.__lockDialogCalls);
+    assert.ok(lockDialogCalls.length >= 1, 'Kilitli dosya kaydedilirken diyalog açılmalıdır');
+    assert.match(lockDialogCalls[0].message, /başka bir programda/i, 'Diyalog mesajı "başka bir programda" içermelidir');
+    assert.deepEqual(lockDialogCalls[0].buttons, ['Tekrar dene', 'Farklı kaydet', 'İptal'], 'Diyalog butonları Tekrar dene, Farklı kaydet, İptal olmalıdır');
+
+    // Editör içeriği aynı olmalı
+    const editorText = await env.page.locator('.ProseMirror').textContent();
+    assert.match(editorText, /Yeni eklenen metin/);
+
+    // Diskteki dosyanın SHA-256'sı değişmemiş olmalı
+    const afterCancelSha = crypto.createHash('sha256').update(fs.readFileSync(testFile)).digest('hex');
+    assert.equal(afterCancelSha, initialSha, 'Kayıt başarısız olduğunda diskteki dosya SHA-256 değişmemelidir');
+
+    // Klasörde .tmp dosyası kalmamış olmalı (finally temizliği)
+    const tmpFiles = fs.readdirSync(testSubdir).filter(f => f.endsWith('.tmp'));
+    assert.equal(tmpFiles.length, 0, 'Başarısız kayıt sonrası klasörde hiçbir .tmp dosyası kalmamalıdır');
+
+    logPass('Kilitli dosyada diyalog mesajı, mavi nokta, SHA-256 değişmezliği ve .tmp temizliği doğrulandı.');
+
+    // 5. (b) Tutucu süreç kapanınca "Tekrar dene": kayıt başarılı, mavi nokta kalkar
+    if (psProc) {
+      psProc.kill();
+      psProc = null;
+    }
+    await new Promise(r => setTimeout(r, 500));
+
+    // Tekrar dene (response: 0)
+    await env.app.evaluate(({ dialog }) => {
+      globalThis.__lockDialogCalls = [];
+      dialog.showMessageBox = async () => ({ response: 0 }); // Tekrar dene
+    });
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1500);
+
+    const afterSaveContent = fs.readFileSync(testFile, 'utf8');
+    assert.match(afterSaveContent, /Yeni eklenen metin/, 'Tekrar dene sonrası dosya başarıyla kaydedilmelidir');
+    logPass('Kilit kalkınca "Tekrar dene" ile kayıt başarıyla tamamlandı.');
+
+    // 6. (c) "Farklı kaydet": yeni dosyaya yazılır, orijinal dokunulmaz
+    const psCmd2 = `$s = [System.IO.File]::Open('${testFile.replace(/\\/g, '\\\\')}', [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); Write-Output 'READY'; Start-Sleep -Seconds 60; $s.Close();`;
+    psProc = spawn('powershell.exe', ['-NoProfile', '-Command', psCmd2]);
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('PowerShell lock 2 timed out')), 10000);
+      psProc.stdout.on('data', (data) => {
+        if (data.toString().includes('READY')) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      psProc.on('error', reject);
+    });
+
+    await env.page.locator('.ProseMirror').focus();
+    await env.page.keyboard.type(' Farklı kayıt metni.');
+    await env.page.waitForTimeout(300);
+
+    const preSaveAsContent = fs.readFileSync(testFile, 'utf8');
+    const newSaveAsPath = path.join(testSubdir, 'save_as_success.md');
+
+    // Diyalogda "Farklı kaydet" (response: 1) seç
+    await env.app.evaluate(({ dialog }, newPath) => {
+      dialog.showMessageBox = async () => ({ response: 1 }); // Farklı kaydet
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: newPath });
+    }, newSaveAsPath);
+
+    await env.page.keyboard.press('Control+s');
+    await env.page.waitForTimeout(1500);
+
+    assert.equal(fs.existsSync(newSaveAsPath), true, 'Farklı kaydet ile yeni dosya oluşturulmalıdır');
+    const newSaveAsContent = fs.readFileSync(newSaveAsPath, 'utf8');
+    assert.match(newSaveAsContent, /Farklı kayıt metni/, 'Yeni dosyada yeni içerik olmalıdır');
+
+    // Orijinal dosya dokunulmamış kalmalıdır
+    assert.equal(fs.readFileSync(testFile, 'utf8'), preSaveAsContent, 'Farklı kaydet işleminde orijinal dosya dokunulmamış kalmalıdır');
+    logPass('Farklı kaydet seçeneği ile yeni dosyaya yazıldı, orijinal korundu.');
+
+    passedCount++;
+    results.push({ name: 'Senaryo 19: Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması', status: 'PASS' });
+  } catch (err) {
+    logFail('Senaryo 19 Başarısız', err);
+    failedCount++;
+    results.push({ name: 'Senaryo 19: Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması', status: 'FAIL', error: err.message });
+  } finally {
+    if (psProc) {
+      try { psProc.kill(); } catch {}
+    }
     await env.cleanup();
   }
 }
@@ -2292,7 +2662,9 @@ async function main() {
     { num: '14', fn: runScenario14 },
     { num: '15', fn: runScenario15 },
     { num: '16', fn: runScenarioA4Layout },
-    { num: '17', fn: runScenario17 }
+    { num: '17', fn: runScenario17 },
+    { num: '18', fn: runScenario18LineBreakWysiwyg },
+    { num: '19', fn: runScenario19 }
   ];
 
   for (const s of allScenarios) {

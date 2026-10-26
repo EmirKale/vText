@@ -24,7 +24,7 @@ import {
 } from '../src/main/ipcSchemas.ts';
 import { saveFile } from '../src/main/files.ts';
 import { closeCoordinator } from '../src/main/closeCoordinator.ts';
-import { isValidSmokeTestOutPath } from '../src/main/smokeValidator.ts';
+import { isValidSmokeTestOutPath, isValidSmokeTestOpenPath } from '../src/main/smokeValidator.ts';
 import fs from 'fs';
 import os from 'os';
 
@@ -761,6 +761,27 @@ describe('Enforce Registry Format & Atomic saveFile', () => {
 
       assert.equal(isValidSmokeTestOutPath(null), false);
       assert.equal(isValidSmokeTestOutPath(''), false);
+    });
+
+    it('--smoke-test-open yalnızca os.tmpdir() altındaki .docx, .md ve .txt dosyalarını kabul etmelidir', () => {
+      const validDocx = path.join(os.tmpdir(), 'valid.docx');
+      const validMd = path.join(os.tmpdir(), 'valid.md');
+      const validTxt = path.join(os.tmpdir(), 'valid.txt');
+      assert.equal(isValidSmokeTestOpenPath(validDocx), true);
+      assert.equal(isValidSmokeTestOpenPath(validMd), true);
+      assert.equal(isValidSmokeTestOpenPath(validTxt), true);
+
+      const invalidExt = path.join(os.tmpdir(), 'invalid.exe');
+      assert.equal(isValidSmokeTestOpenPath(invalidExt), false);
+
+      const outsideTmp = path.resolve('C:\\Windows\\System32\\test.docx');
+      assert.equal(isValidSmokeTestOpenPath(outsideTmp), false);
+
+      const traversal = path.join(os.tmpdir(), '..', 'evil.md');
+      assert.equal(isValidSmokeTestOpenPath(traversal), false);
+
+      assert.equal(isValidSmokeTestOpenPath(null), false);
+      assert.equal(isValidSmokeTestOpenPath(''), false);
     });
 
     it('Duman testi işaret dosyasına yalnızca durum ve ayar ANAHTARLARI yazılmalı, hiçbir DEĞER yazılmamalıdır', () => {

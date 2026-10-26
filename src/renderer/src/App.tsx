@@ -68,7 +68,7 @@ export const App: React.FC = () => {
       // Listen for files opened via Windows file association / double-click
       const unsubscribe = window.kalem.files.onOpenFile((result) => {
         if (result.success && result.content !== undefined) {
-          addTab(result.title, result.content, result.docId, result.format, result.unsupportedWarning);
+          addTab(result.title, result.content, result.docId, result.format, result.unsupportedWarning, result.pageSetup);
         }
       });
 
@@ -189,7 +189,7 @@ export const App: React.FC = () => {
     if (!window.kalem) return;
     const res = await window.kalem.files.open();
     if (res.success && res.content !== undefined) {
-      addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning);
+      addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning, res.pageSetup);
     }
   };
 
@@ -258,7 +258,8 @@ export const App: React.FC = () => {
         const json = editorInstance.getJSON();
         const docxBuffer = await exportTipTapJsonToDocx(json, docTitle, {
           margin: pageMargin,
-          orientation: pageOrientation
+          orientation: pageOrientation,
+          pageSetup: currentTab.pageSetup
         });
         saveRes = await window.kalem.files.save(docId, docxBuffer);
       } else if (format === 'md') {
@@ -276,6 +277,7 @@ export const App: React.FC = () => {
 
       if (saveRes && saveRes.success) {
         updateTabMeta(currentTab.id, {
+          docId: saveRes.docId || docId,
           title: saveRes.title || docTitle,
           isDirty: false,
           lastSavedAt: Date.now()
@@ -285,17 +287,26 @@ export const App: React.FC = () => {
         }
         return true;
       } else if (saveRes && saveRes.error) {
-        if (
-          saveRes.errorCode !== 'ERR_BACKUP_CANCELLED' &&
-          saveRes.errorCode !== 'ERR_EXTERNAL_CHANGE_CANCELLED'
-        ) {
+        const dialogHandledErrors = [
+          'ERR_BACKUP_CANCELLED',
+          'ERR_EXTERNAL_CHANGE_CANCELLED',
+          'ERR_LOCKED_BY_ANOTHER_PROCESS',
+          'ERR_SAVE_AS_CANCELLED',
+          'ERR_PERMISSION_DENIED',
+          'ERR_DISK_FULL',
+          'ERR_DIR_NOT_FOUND',
+          'ERR_READ_ONLY_FS',
+          'ERR_NAME_TOO_LONG',
+          'ERR_WRITE_FAILED'
+        ];
+        if (!dialogHandledErrors.includes(saveRes.errorCode || '')) {
           alert(`Kaydetme hatası: ${saveRes.error}`);
         }
         return false;
       }
       return false;
     } catch (err: any) {
-      alert(`Kaydetme hatası: ${err.message}`);
+      alert(`Kaydetme hatası: ${err.message || 'Bilinmeyen hata'}`);
       return false;
     }
   };
@@ -409,7 +420,7 @@ export const App: React.FC = () => {
       if (file && window.kalem) {
         const res = await window.kalem.files.openDropped(file);
         if (res.success && res.content !== undefined) {
-          addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning);
+          addTab(res.title, res.content, res.docId, res.format, res.unsupportedWarning, res.pageSetup);
         }
       }
     }

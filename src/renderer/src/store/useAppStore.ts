@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DocumentTab, AppSettings, ProofreadItem, DocumentFormat } from '../../../shared/types';
+import { DocumentTab, AppSettings, ProofreadItem, DocumentFormat, PageSetup } from '../../../shared/types';
 
 export interface SavedFormat {
   marks: Array<{ type: string; attrs?: Record<string, any> }>;
@@ -43,7 +43,7 @@ interface AppState {
   settings: AppSettings;
 
   // Actions
-  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat, unsupportedWarning?: string) => string;
+  addTab: (title?: string, content?: string, docId?: string, format?: DocumentFormat, unsupportedWarning?: string, pageSetup?: PageSetup) => string;
   dismissUnsupportedWarning: (tabId: string) => void;
   closeTab: (id: string) => void;
   requestCloseTab: (id?: string) => Promise<boolean>;
@@ -126,20 +126,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   settings: DEFAULT_SETTINGS,
 
-  addTab: (title, content, docId, format = 'docx', unsupportedWarning?: string) => {
+  addTab: (title, content, docId, format = 'docx', unsupportedWarning?: string, pageSetup?: PageSetup) => {
     const { tabs } = get();
 
     // 1. Zaten açık olan belge kontrolü (yalnızca docId ile)
     const existing = docId ? tabs.find((t) => t.docId === docId) : undefined;
     if (existing) {
-      if (unsupportedWarning) {
-        set((state) => ({
-          tabs: state.tabs.map((t) => (t.id === existing.id ? { ...t, unsupportedWarning } : t)),
-          activeTabId: existing.id
-        }));
-      } else {
-        set({ activeTabId: existing.id });
-      }
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === existing.id
+            ? { ...t, ...(unsupportedWarning ? { unsupportedWarning } : {}), ...(pageSetup ? { pageSetup } : {}) }
+            : t
+        ),
+        activeTabId: existing.id
+      }));
       return existing.id;
     }
 
@@ -161,7 +161,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         docId,
         isDirty: false,
         format: format || 'docx',
-        unsupportedWarning
+        unsupportedWarning,
+        pageSetup
       };
       set({ tabs: [updatedTab], activeTabId: updatedTab.id });
       return updatedTab.id;
@@ -177,7 +178,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       docId,
       isDirty: false,
       format,
-      unsupportedWarning
+      unsupportedWarning,
+      pageSetup
     };
 
     set((state) => ({

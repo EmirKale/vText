@@ -220,9 +220,19 @@ function createWindow(): void {
   const smokeTestOutPath = smokeOutArg ? smokeOutArg.slice('--smoke-test-out='.length) : null;
   const isValidOutPath = isValidSmokeTestOutPath(smokeTestOutPath);
 
-  const smokeOpenArg = process.argv.find((arg) => arg.startsWith('--smoke-test-open='));
-  const smokeTestOpenPath = smokeOpenArg ? smokeOpenArg.slice('--smoke-test-open='.length) : null;
-  const isValidOpenPath = isValidSmokeTestOpenPath(smokeTestOpenPath);
+  // Collect all --smoke-test-open= args (supports multiple flags or comma-separated list)
+  const openArgs: string[] = [];
+  for (const arg of process.argv) {
+    if (arg.startsWith('--smoke-test-open=')) {
+      const val = arg.slice('--smoke-test-open='.length);
+      for (const p of val.split(',')) {
+        const trimmed = p.trim();
+        if (trimmed && isValidSmokeTestOpenPath(trimmed)) {
+          openArgs.push(trimmed);
+        }
+      }
+    }
+  }
 
   if (isSmokeTest && isValidOutPath && smokeTestOutPath) {
     mainWindow.webContents.on('did-finish-load', async () => {
@@ -238,35 +248,53 @@ function createWindow(): void {
             api.settings.get().then(resolve).catch(reject);
           })
         `);
-        // Only write status and setting keys; NEVER write values (including API keys)
-        const settingKeys = settings && typeof settings === 'object' ? Object.keys(settings).sort() : [];
 
-        let headingCount = 0;
-        let paragraphCount = 0;
-        let openSuccess = true;
+        let overallSuccess = true;
+        let docxHeadings = 0;
+        let docxParagraphs = 0;
+        let mdHeadings = 0;
+        let mdParagraphs = 0;
+        let txtParagraphs = 0;
 
-        if (isValidOpenPath && smokeTestOpenPath) {
-          console.log('[SmokeTest] Opening DOCX file:', smokeTestOpenPath);
-          const openResult = await openFileByPath(smokeTestOpenPath);
-          if (openResult.success && openResult.content) {
-            const hMatches = openResult.content.match(/<h[1-6]\b[^>]*>/gi);
-            const pMatches = openResult.content.match(/<(?:p|li)\b[^>]*>/gi);
-            headingCount = hMatches ? hMatches.length : 0;
-            paragraphCount = pMatches ? pMatches.length : 0;
-          } else {
-            openSuccess = false;
+        for (const filePath of openArgs) {
+          const ext = path.extname(filePath).toLowerCase();
+          console.log(`[SmokeTest] Opening ${ext} file:`, filePath);
+          const openResult = await openFileByPath(filePath);
+          if (!openResult.success || !openResult.content) {
+            overallSuccess = false;
+            console.error(`[SmokeTest] Dosya açılamadı (${ext}):`, openResult.error);
+            continue;
+          }
+          const content = openResult.content;
+          const hMatches = content.match(/<h[1-6]\b[^>]*>/gi);
+          const pMatches = content.match(/<(?:p|li)\b[^>]*>/gi);
+          const hCount = hMatches ? hMatches.length : 0;
+          const pCount = pMatches ? pMatches.length : 0;
+
+          if (ext === '.docx') {
+            docxHeadings += hCount;
+            docxParagraphs += pCount;
+          } else if (ext === '.md') {
+            mdHeadings += hCount;
+            mdParagraphs += pCount;
+          } else if (ext === '.txt') {
+            txtParagraphs += pCount;
           }
         }
 
-        const payload: Record<string, any> = (isValidOpenPath && smokeTestOpenPath)
+        // Only boolean success and number metrics are written to the marker file (no paths or strings)
+        const payload: Record<string, boolean | number> = (openArgs.length > 0)
           ? {
-              success: openSuccess,
-              headingCount,
-              paragraphCount
+              success: overallSuccess,
+              docxHeadings,
+              docxParagraphs,
+              mdHeadings,
+              mdParagraphs,
+              txtParagraphs
             }
           : {
-              success: openSuccess,
-              settingKeys,
+              success: overallSuccess,
+              settingKeyCount: settings && typeof settings === 'object' ? Object.keys(settings).length : 0,
               timestamp: Date.now()
             };
 

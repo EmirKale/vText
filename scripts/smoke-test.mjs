@@ -18,10 +18,12 @@ if (!fs.existsSync(exePath)) {
   process.exit(1);
 }
 
-// 1. İzole temiz userData klasörü, geçici işaret dosyası ve docx oluştur
+// 1. İzole temiz userData klasörü, geçici işaret dosyası, docx, md ve txt oluştur
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vtext-smoke-user-'));
 const markerFile = path.join(os.tmpdir(), `vtext-smoke-out-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
 const tmpDocx = path.join(os.tmpdir(), `vtext-smoke-in-${Date.now()}-${Math.random().toString(36).slice(2)}.docx`);
+const tmpMd = path.join(os.tmpdir(), `vtext-smoke-in-${Date.now()}-${Math.random().toString(36).slice(2)}.md`);
+const tmpTxt = path.join(os.tmpdir(), `vtext-smoke-in-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
 
 // Küçük geçerli bir DOCX oluştur (1 başlık + 2 maddelik liste)
 const testDoc = new Document({
@@ -49,6 +51,16 @@ const docxBuffer = await Packer.toBuffer(testDoc);
 fs.writeFileSync(tmpDocx, docxBuffer);
 console.log(`[Smoke Test] Test DOCX dosyası oluşturuldu: ${tmpDocx} (${docxBuffer.length} bayt)`);
 
+// Markdown dosyası oluştur (markdown-it asar yükleme doğrulaması)
+const mdContent = `# Markdown Duman Başlığı\n\nBirinci markdown paragrafı.\n\nİkinci markdown paragrafı.\n`;
+fs.writeFileSync(tmpMd, mdContent, 'utf-8');
+console.log(`[Smoke Test] Test MD dosyası oluşturuldu: ${tmpMd}`);
+
+// TXT dosyası oluştur (kodlama çözücü / plain text import doğrulaması)
+const txtContent = `Türkçe karakterler içeren ilk paragraf: ığüşöç İĞÜŞÖÇ.\n\nİkinci düz metin paragrafı.\n`;
+fs.writeFileSync(tmpTxt, txtContent, 'utf-8');
+console.log(`[Smoke Test] Test TXT dosyası oluşturuldu: ${tmpTxt}`);
+
 if (fs.existsSync(markerFile)) {
   fs.unlinkSync(markerFile);
 }
@@ -65,7 +77,7 @@ const child = spawn(
     `--user-data-dir=${tmpUserData}`,
     '--smoke-test',
     `--smoke-test-out=${markerFile}`,
-    `--smoke-test-open=${tmpDocx}`
+    `--smoke-test-open=${tmpDocx},${tmpMd},${tmpTxt}`
   ],
   {
     cwd: path.dirname(exePath),
@@ -108,30 +120,55 @@ while (elapsed < maxWaitMs) {
       const raw = fs.readFileSync(markerFile, 'utf-8');
       const data = JSON.parse(raw);
       if (data && data.success === true) {
-        const keys = Object.keys(data).sort();
         console.log(`[Smoke Test] BAŞARILI! İşaret dosyası ${elapsed}ms içinde yazıldı.`);
         console.log(`[Smoke Test] İşaret dosyası içeriği:`, JSON.stringify(data));
-        
-        // YALNIZCA başarı durumu, başlık sayısı ve paragraf sayısı kontrolü
-        if (keys.join(',') !== 'headingCount,paragraphCount,success') {
-          console.error(`[Smoke Test] HATA: İşaret dosyasında beklenmeyen ek alanlar var:`, keys);
+
+        // İşaret dosyasında YALNIZCA başarı ve sayılar olmalıdır (hiçbir yol veya metin sızmamalıdır)
+        for (const [key, val] of Object.entries(data)) {
+          if (key === 'success') {
+            if (typeof val !== 'boolean') {
+              console.error(`[Smoke Test] HATA: success alanı boolean değil:`, typeof val);
+              cleanup();
+              process.exit(1);
+            }
+          } else {
+            if (typeof val !== 'number') {
+              console.error(`[Smoke Test] HATA: Alan sayısal değil (${key}):`, typeof val, val);
+              cleanup();
+              process.exit(1);
+            }
+          }
+        }
+
+        if (typeof data.docxHeadings !== 'number' || data.docxHeadings < 1) {
+          console.error(`[Smoke Test] HATA: docxHeadings beklenen değerde değil:`, data.docxHeadings);
+          cleanup();
+          process.exit(1);
+        }
+        if (typeof data.docxParagraphs !== 'number' || data.docxParagraphs < 2) {
+          console.error(`[Smoke Test] HATA: docxParagraphs beklenen değerde değil:`, data.docxParagraphs);
+          cleanup();
+          process.exit(1);
+        }
+        if (typeof data.mdHeadings !== 'number' || data.mdHeadings < 1) {
+          console.error(`[Smoke Test] HATA: mdHeadings beklenen değerde değil (markdown-it hatası?):`, data.mdHeadings);
+          cleanup();
+          process.exit(1);
+        }
+        if (typeof data.mdParagraphs !== 'number' || data.mdParagraphs < 2) {
+          console.error(`[Smoke Test] HATA: mdParagraphs beklenen değerde değil:`, data.mdParagraphs);
+          cleanup();
+          process.exit(1);
+        }
+        if (typeof data.txtParagraphs !== 'number' || data.txtParagraphs < 2) {
+          console.error(`[Smoke Test] HATA: txtParagraphs beklenen değerde değil (kodlama çözücü hatası?):`, data.txtParagraphs);
           cleanup();
           process.exit(1);
         }
 
-        if (typeof data.headingCount !== 'number' || data.headingCount < 1) {
-          console.error(`[Smoke Test] HATA: headingCount beklenen değerde değil:`, data.headingCount);
-          cleanup();
-          process.exit(1);
-        }
-
-        if (typeof data.paragraphCount !== 'number' || data.paragraphCount < 1) {
-          console.error(`[Smoke Test] HATA: paragraphCount beklenen değerde değil:`, data.paragraphCount);
-          cleanup();
-          process.exit(1);
-        }
-
-        console.log(`[Smoke Test] Başlık sayısı: ${data.headingCount}, Paragraf/Madde sayısı: ${data.paragraphCount}`);
+        console.log(`[Smoke Test] DOCX: ${data.docxHeadings} başlık, ${data.docxParagraphs} paragraf/madde.`);
+        console.log(`[Smoke Test] MD: ${data.mdHeadings} başlık, ${data.mdParagraphs} paragraf (markdown-it asar doğrulandı).`);
+        console.log(`[Smoke Test] TXT: ${data.txtParagraphs} paragraf (kodlama çözücü doğrulandı).`);
         success = true;
         break;
       } else {
@@ -185,6 +222,18 @@ function cleanup() {
   try {
     if (fs.existsSync(tmpDocx)) {
       fs.unlinkSync(tmpDocx);
+    }
+  } catch {}
+
+  try {
+    if (fs.existsSync(tmpMd)) {
+      fs.unlinkSync(tmpMd);
+    }
+  } catch {}
+
+  try {
+    if (fs.existsSync(tmpTxt)) {
+      fs.unlinkSync(tmpTxt);
     }
   } catch {}
 

@@ -30,6 +30,7 @@ import { Indent } from './extensions/Indent';
 import { BubbleMenuCard } from '../components/BubbleMenuCard';
 import { ImageBubbleMenu } from '../components/ImageBubbleMenu';
 import { useAppStore } from '../store/useAppStore';
+import { TYPOGRAPHY } from '../../../shared/typography';
 
 const lowlight = createLowlight(common);
 
@@ -41,6 +42,8 @@ interface TipTapEditorProps {
 
 export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, onEditorReady }) => {
   const {
+    tabs,
+    activeTabId,
     viewMode,
     settings,
     isFocusMode,
@@ -50,6 +53,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
     savedFormat,
     clearFormatPainter
   } = useAppStore();
+  const activeTab = tabs.find((t) => t.id === activeTabId);
   const lastContentRef = useRef(content);
 
   const editor = useEditor({
@@ -225,22 +229,68 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({ content, onUpdate, o
         </div>
       )}
 
-      <div
-        style={{ fontSize: `${settings.fontSize}px` }}
-        className={`w-full h-fit transition-[max-width,padding] duration-200 print:shadow-none print:ring-0 print:border-none print:m-0 print:p-0 print:max-w-none print:bg-transparent print:text-black print:min-h-0 ${
-          viewMode === 'page' && !isFocusMode
-            ? `${pageOrientation === 'landscape' ? 'max-w-[1056px] min-h-[816px]' : 'max-w-[816px] min-h-[1056px]'} ${
-                pageMargin === 'narrow'
-                  ? 'px-[48px] py-[48px]'
-                  : pageMargin === 'wide'
-                  ? 'px-[144px] py-[144px]'
-                  : 'px-[96px] py-[96px]'
-              } bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60`
-            : 'max-w-[700px] px-2 py-4'
-        }`}
-      >
-        <EditorContent editor={editor} />
-      </div>
+      {(() => {
+        // Sayfa boyutları ve metin alanı hesabı (I4 ve I2):
+        // 1 dxa = 1/15 px (96 DPI / 1440 dxa/inch)
+        const pageSetup = activeTab?.pageSetup;
+        const isLandscape = pageSetup
+          ? pageSetup.orientation === 'landscape' || pageSetup.widthDxa > pageSetup.heightDxa
+          : pageOrientation === 'landscape';
+
+        const pageWidthPx = pageSetup
+          ? (isLandscape ? Math.max(pageSetup.widthDxa, pageSetup.heightDxa) : Math.min(pageSetup.widthDxa, pageSetup.heightDxa)) / 15
+          : isLandscape ? TYPOGRAPHY.page.heightPx : TYPOGRAPHY.page.widthPx; // A4: 793.7px (yatay: 1122.5px)
+
+        const pageMinHeightPx = pageSetup
+          ? (isLandscape ? Math.min(pageSetup.widthDxa, pageSetup.heightDxa) : Math.max(pageSetup.widthDxa, pageSetup.heightDxa)) / 15
+          : isLandscape ? TYPOGRAPHY.page.widthPx : TYPOGRAPHY.page.heightPx; // A4: 1122.5px (yatay: 793.7px)
+
+        const padTopPx = pageSetup?.margins
+          ? pageSetup.margins.top / 15
+          : pageMargin === 'narrow' ? 48 : pageMargin === 'wide' ? 192 : TYPOGRAPHY.page.marginPx;
+
+        const padRightPx = pageSetup?.margins
+          ? pageSetup.margins.right / 15
+          : pageMargin === 'narrow' ? 48 : pageMargin === 'wide' ? 192 : TYPOGRAPHY.page.marginPx;
+
+        const padBottomPx = pageSetup?.margins
+          ? pageSetup.margins.bottom / 15
+          : pageMargin === 'narrow' ? 48 : pageMargin === 'wide' ? 192 : TYPOGRAPHY.page.marginPx;
+
+        const padLeftPx = pageSetup?.margins
+          ? pageSetup.margins.left / 15
+          : pageMargin === 'narrow' ? 48 : pageMargin === 'wide' ? 192 : TYPOGRAPHY.page.marginPx;
+
+        return (
+          <div
+            data-testid="page-container"
+            style={
+              viewMode === 'page' && !isFocusMode
+                ? {
+                    maxWidth: `${pageWidthPx}px`,
+                    minHeight: `${pageMinHeightPx}px`,
+                    paddingTop: `${padTopPx}px`,
+                    paddingRight: `${padRightPx}px`,
+                    paddingBottom: `${padBottomPx}px`,
+                    paddingLeft: `${padLeftPx}px`,
+                    fontSize: `${settings.fontSize}px`
+                  }
+                : {
+                    maxWidth: '700px',
+                    padding: '16px 8px',
+                    fontSize: `${settings.fontSize}px`
+                  }
+            }
+            className={`w-full h-fit transition-[max-width,padding] duration-200 print:shadow-none print:ring-0 print:border-none print:m-0 print:p-0 print:max-w-none print:bg-transparent print:text-black print:min-h-0 ${
+              viewMode === 'page' && !isFocusMode
+                ? 'bg-paper rounded-[3px] shadow-paper ring-1 ring-line/60'
+                : ''
+            }`}
+          >
+            <EditorContent editor={editor} />
+          </div>
+        );
+      })()}
     </div>
   );
 };

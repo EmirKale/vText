@@ -30,6 +30,11 @@ export const TabBar: React.FC = () => {
             }`}
           >
             <span className="truncate flex-1">{tab.title}</span>
+            {tab.pageSetup?.orientation === 'landscape' && (
+              <span className="text-[10px] px-1 py-0.2 rounded bg-ink/10 text-muted font-normal shrink-0" title="Sayfa: Yatay">
+                Yatay
+              </span>
+            )}
 
             <button
               onClick={(e) => {

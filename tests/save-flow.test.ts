@@ -365,5 +365,149 @@ describe('Kaydetme ve Dışa Aktarma Akış Testleri (Uçtan Uca)', () => {
       assert.equal(dialogCalled, false, 'vText\'in kendi ikinci kaydında diyalog ÇIKMAMALIDIR');
       assert.equal(fs.readFileSync(originalPath, 'utf8'), '# vText İkinci Kayıt');
     });
+
+    it('I6: Dış değişiklik algılandığında "Farklı Kaydet" seçilirse yeni dosyaya yazılmalı, orijinal dokunulmamalıdır', async () => {
+      const originalPath = path.join(tmpDir, 'i6_original.md');
+      fs.writeFileSync(originalPath, '# Orijinal Metin\nİlk hali.', 'utf8');
+
+      const openRes = await openFileByPath(originalPath);
+      assert.equal(openRes.success, true);
+
+      // Dışarıdan değiştir
+      await new Promise(r => setTimeout(r, 20));
+      const externalText = '# Dış Değişiklik\nLibreOffice içeriği.';
+      fs.writeFileSync(originalPath, externalText, 'utf8');
+
+      const newSavePath = path.join(tmpDir, 'i6_farkli_kayit.md');
+      const mockWin: any = {};
+
+      vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+        return { response: 1, checkboxChecked: false }; // Farklı kaydet
+      });
+
+      vi.mocked(dialog.showSaveDialog).mockImplementation(async () => {
+        return { canceled: false, filePath: newSavePath };
+      });
+
+      const saveRes = await saveFile(openRes.docId!, '# vText Farklı Kayıt Metni', mockWin);
+      assert.equal(saveRes.success, true);
+
+      // Yeni dosyaya yazılmış olmalı
+      assert.equal(fs.existsSync(newSavePath), true);
+      assert.equal(fs.readFileSync(newSavePath, 'utf8'), '# vText Farklı Kayıt Metni');
+
+      // Orijinal dosya dokunulmamış kalmalı
+      assert.equal(fs.readFileSync(originalPath, 'utf8'), externalText);
+    });
+  });
+
+  describe('Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması (J)', () => {
+    it('J1-J4: Rename EPERM verdiğinde kullanıcı dostu diyalog açılmalı, yol sızmamalı, .tmp temizlenmelidir', async () => {
+      const targetFile = path.join(tmpDir, 'locked_file.md');
+      fs.writeFileSync(targetFile, '# Orijinal Dosya', 'utf8');
+      const entry = registry.register(targetFile, 'md', 'Locked File');
+
+      const mockWin: any = {};
+      let dialogBoxOptions: any = null;
+
+      vi.mocked(dialog.showMessageBox).mockImplementation(async (_win: any, opts: any) => {
+        dialogBoxOptions = opts || _win;
+        return { response: 2, checkboxChecked: false }; // İptal
+      });
+
+      // fs.promises.rename mock: EPERM hatası ver
+      const renameSpy = vi.spyOn(fs.promises, 'rename').mockRejectedValue(
+        Object.assign(new Error(`EPERM: operation not permitted, rename '${tmpDir}\\.tmp' -> '${targetFile}'`), {
+          code: 'EPERM',
+          syscall: 'rename',
+          errno: -4048
+        })
+      );
+
+      const res = await saveFile(entry.docId, '# Yeni İçerik', mockWin);
+
+      renameSpy.mockRestore();
+
+      assert.equal(res.success, false);
+      assert.equal(res.errorCode, 'ERR_LOCKED_BY_ANOTHER_PROCESS');
+
+      // IPC sonucunda ve error mesajında tam dosya yolu ("C:\") ASLA yer almamalıdır (J4)
+      assert.equal(JSON.stringify(res).includes('C:\\'), false, 'IPC sonucunda tam yol sızmamalıdır');
+      assert.equal(res.error?.includes('C:\\'), false);
+      assert.equal(res.fileName, 'locked_file.md');
+
+      // Diyalog metinleri doğrulaması (J3)
+      assert.ok(dialogBoxOptions, 'Kilit hatasında diyalog açılmalıdır');
+      assert.equal(dialogBoxOptions.title, 'Dosya kaydedilemedi');
+      assert.match(dialogBoxOptions.message, /başka bir programda/);
+      assert.deepEqual(dialogBoxOptions.buttons, ['Tekrar dene', 'Farklı kaydet', 'İptal']);
+      assert.equal(dialogBoxOptions.defaultId, 0);
+      assert.equal(dialogBoxOptions.cancelId, 2);
+      assert.equal(dialogBoxOptions.detail.includes(targetFile), false, 'Detail içinde tam yol olmamalıdır');
+      assert.match(dialogBoxOptions.detail, /locked_file\.md/);
+
+      // .tmp dosyasının temizlendiğini doğrula (J2)
+      const leftoverTmp = fs.readdirSync(tmpDir).filter(f => f.endsWith('.tmp'));
+      assert.equal(leftoverTmp.length, 0, 'Hata sonrası geçici .tmp dosyası temizlenmiş olmalıdır');
+
+      // Orijinal dosyanın bozulmadığını doğrula
+      assert.equal(fs.readFileSync(targetFile, 'utf8'), '# Orijinal Dosya');
+    });
+
+    it('J6: Aynı SHA-256\'ya sahip yedek varsa mükerrer (yedek 2) üretilmemelidir', async () => {
+      const targetFile = path.join(tmpDir, 'backup_reuse.docx');
+      const fixturePath = path.resolve('tests/fixtures/h6-clean.docx');
+      fs.copyFileSync(fixturePath, targetFile);
+
+      const openRes = await openFileByPath(targetFile);
+      assert.equal(openRes.success, true);
+
+      // İlk kayıt -> "(vText öncesi yedek)" oluşturur
+      const cleanDocxBytes = fs.readFileSync(fixturePath);
+      const saveRes1 = await saveFile(openRes.docId!, cleanDocxBytes);
+      assert.equal(saveRes1.success, true);
+      assert.equal(saveRes1.backupFileName, 'backup_reuse (vText öncesi yedek).docx');
+
+      // Dosya dışarıdan değiştirilsin
+      await new Promise(r => setTimeout(r, 20));
+      const altFixturePath = path.resolve('tests/fixtures/doc1_alignment.docx');
+      fs.copyFileSync(altFixturePath, targetFile);
+
+      // Şimdi dış değişiklik sonrası "Üzerine yaz" seçilsin
+      const mockWin: any = {};
+      vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false }); // Üzerine yaz
+
+      // Bir yedek kopyası daha oluşacak: backup_reuse (vText öncesi yedek 2).docx
+      const saveRes2 = await saveFile(openRes.docId!, cleanDocxBytes, mockWin);
+      assert.equal(saveRes2.success, true);
+      assert.equal(saveRes2.backupFileName, 'backup_reuse (vText öncesi yedek 2).docx');
+
+      // Şimdi aynı dış dosya durumunda bir kez daha saveFile çağrılırsa (aynı SHA-256'lı yedek varsa)
+      // üçüncü bir yedek (yedek 3) açılmamalı, mevcut yedek yeniden kullanılmalıdır
+      const saveRes3 = await saveFile(openRes.docId!, cleanDocxBytes, mockWin);
+      assert.equal(saveRes3.success, true);
+      assert.equal(fs.existsSync(path.join(tmpDir, 'backup_reuse (vText öncesi yedek 3).docx')), false);
+    });
+
+    it('J2: Geçici EPERM/EBUSY kilidinde retry ile ikinci denemede başarılı olmalıdır', async () => {
+      const targetFile = path.join(tmpDir, 'retry_file.md');
+      fs.writeFileSync(targetFile, '# Orijinal Dosya', 'utf8');
+      const entry = registry.register(targetFile, 'md', 'Retry File');
+
+      let renameAttempts = 0;
+      const renameSpy = vi.spyOn(fs.promises, 'rename').mockImplementation(async (oldPath, newPath) => {
+        renameAttempts++;
+        if (renameAttempts === 1) {
+          throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY', syscall: 'rename' });
+        }
+        renameSpy.mockRestore();
+        return fs.promises.rename(oldPath, newPath);
+      });
+
+      const res = await saveFile(entry.docId, '# Yeni İçerik');
+      assert.equal(res.success, true);
+      assert.equal(renameAttempts >= 2, true, 'En az 1 retry denenmiş olmalıdır');
+      assert.equal(fs.readFileSync(targetFile, 'utf8'), '# Yeni İçerik');
+    });
   });
 });

@@ -24,6 +24,9 @@ export const TYPOGRAPHY = {
     heightPt: 841.89,
     widthDxa: 11906,
     heightDxa: 16838,
+    widthPx: 793.7,
+    heightPx: 1122.5,
+    contentWidthPx: 601.7,
     // Normal / standard sayfa kenar boşluğu: 25.4mm (1.0 inç / 72 pt / 1440 dxa / 96 px)
     marginMm: 25.4,
     marginIn: 1.0,
@@ -32,14 +35,43 @@ export const TYPOGRAPHY = {
     marginPx: 96,
     marginCss: '25.4mm'
   },
+  /**
+   * Word / OpenXML ve CSS satır aralığı birimleri için TEK kaynak (I1):
+   * Font metrikleri fontTools ile C:\Windows\Fonts\calibri.ttf ve Carlito-Regular.ttf
+   * dosyalarının hhea/OS2 tablolarından okunmuştur:
+   * unitsPerEm: 2048, hhea.ascent: 1536, hhea.descent: -512 (büyüklük: 512), lineGap: 452
+   * Doğal font satır yüksekliği: (1536 + 512 + 452) / 2048 = 2500 / 2048 = 1.220703125 em.
+   */
+  metrics: {
+    unitsPerEm: 2048,
+    ascent: 1536,
+    descent: 512,
+    lineGap: 452,
+    fontNaturalMultiplier: (1536 + 512 + 452) / 2048 // 1.220703125
+  },
   body: {
     pt: 12,
     px: 16,
     halfPoints: 24,
-    lineHeight: 1.4, // CSS satır aralığı çarpanı (12pt * 1.4 = 16.8pt pitch, Word/OpenXML 1.15 satır aralığı ile eşleşir)
-    lineSpacingDxa: 276, // 1.15 in Word/OpenXML
-    spaceAfterPt: 6,
-    spaceAfterDxa: 120,
+    // Word tek kaynak:
+    wordLineMultiple: 1.15,
+    paragraphAfterPt: 6,
+    get spaceAfterPt(): number {
+      return this.paragraphAfterPt;
+    },
+    // DOCX w:line = round(wordLineMultiple * 240) -> 276
+    get lineSpacingDxa(): number {
+      return Math.round(this.wordLineMultiple * 240);
+    },
+    // Paragraf sonu dxa = round(paragraphAfterPt * 20) -> 120
+    get spaceAfterDxa(): number {
+      return Math.round(this.paragraphAfterPt * 20);
+    },
+    // cssLineHeight = wordLineMultiple * (ascent+descent+lineGap)/unitsPerEm
+    // 1.15 * 1.220703125 = 1.4038... -> 1.4
+    get lineHeight(): number {
+      return Math.round(this.wordLineMultiple * ((1536 + 512 + 452) / 2048) * 10) / 10;
+    },
     spaceAfterEm: '0.5em',
     colorHex: '1C2523'
   },
