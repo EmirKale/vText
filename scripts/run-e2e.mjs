@@ -2244,6 +2244,29 @@ async function runScenario18LineBreakWysiwyg() {
     }, paragraphs);
     await env.page.waitForTimeout(500);
 
+    // I2 DOM Ölçümü (K4): Sayfa elementi genişliği 793.7 ± 1 px, metin alanı 601.7 ± 1 px
+    const domMetrics = await env.page.evaluate(() => {
+      const pageEl = document.querySelector('[data-testid="page-container"]');
+      const textEl = document.querySelector('.ProseMirror');
+      if (!pageEl || !textEl) return null;
+      return {
+        pageWidth: pageEl.getBoundingClientRect().width,
+        textWidth: textEl.getBoundingClientRect().width
+      };
+    });
+
+    assert.ok(domMetrics, 'Sayfa elementi ve metin alanı DOM üzerinde bulunmalıdır');
+    console.log(`  [I2 DOM Ölçümü]: Sayfa=${domMetrics.pageWidth.toFixed(1)}px (beklenen 793.7 ±1), Metin Alanı=${domMetrics.textWidth.toFixed(1)}px (beklenen 601.7 ±1)`);
+    assert.ok(
+      Math.abs(domMetrics.pageWidth - 793.7) <= 1.0,
+      `Sayfa genişliği 793.7 ± 1 px olmalıdır. Gerçek: ${domMetrics.pageWidth.toFixed(2)}px`
+    );
+    assert.ok(
+      Math.abs(domMetrics.textWidth - 601.7) <= 1.0,
+      `Metin alanı genişliği 601.7 ± 1 px olmalıdır. Gerçek: ${domMetrics.textWidth.toFixed(2)}px`
+    );
+    logPass('I2 DOM sayfa genişliği (793.7 px) ve metin alanı (601.7 px) doğrulandı.');
+
     // 2. Editörde her paragrafın satır sayısını Range.getClientRects() ile ölç
     const editorLineCounts = await env.page.evaluate(() => {
       const pElements = Array.from(document.querySelectorAll('.ProseMirror p'));
@@ -2622,6 +2645,65 @@ async function runScenario19() {
     // Orijinal dosya dokunulmamış kalmalıdır
     assert.equal(fs.readFileSync(testFile, 'utf8'), preSaveAsContent, 'Farklı kaydet işleminde orijinal dosya dokunulmamış kalmalıdır');
     logPass('Farklı kaydet seçeneği ile yeni dosyaya yazıldı, orijinal korundu.');
+
+    if (psProc) {
+      psProc.kill();
+      psProc = null;
+    }
+    await new Promise(r => setTimeout(r, 500));
+
+    // 7. (d) K1.a: Geçici kilit (transient lock) varyantı: kilit 300 ms sonra otomatik kalksın, atomicRenameWithRetry sessizce başarsın
+    const transientDoc = path.join(testSubdir, 'transient_doc.md');
+    fs.writeFileSync(transientDoc, '# Gecici Kilit\nBaslangic.', 'utf8');
+
+    await env.app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filePath]
+      });
+      globalThis.__lockDialogCalls = [];
+      dialog.showMessageBox = async () => {
+        globalThis.__lockDialogCalls.push('unexpected');
+        return { response: 2 };
+      };
+    }, transientDoc);
+
+    await env.page.keyboard.press('Control+o');
+    await env.page.waitForTimeout(1000);
+    await env.page.locator('.ProseMirror').focus();
+    await env.page.keyboard.type(' Gecici kilit metni.');
+    await env.page.waitForTimeout(300);
+
+    // PowerShell kilidi açsın, READY desin, stdin'den sinyal gelince kapatsın
+    const transientPsCmd = `$s = [System.IO.File]::Open('${transientDoc.replace(/\\/g, '\\\\')}', [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); Write-Output 'READY'; [Console]::ReadLine(); $s.Close();`;
+    const transientProc = spawn('powershell.exe', ['-NoProfile', '-Command', transientPsCmd], {
+      stdio: ['pipe', 'pipe', 'inherit']
+    });
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Transient lock timeout')), 10000);
+      transientProc.stdout.on('data', (data) => {
+        if (data.toString().includes('READY')) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      transientProc.on('error', reject);
+    });
+
+    // Kaydet tuşuna bas, tam 300 ms sonra kilidi serbest bırak
+    const savePromise = env.page.keyboard.press('Control+s');
+    await new Promise((r) => setTimeout(r, 300));
+    try {
+      transientProc.stdin.write('\n');
+    } catch {}
+    await savePromise;
+    await env.page.waitForTimeout(1500);
+
+    const transientDialogCalls = await env.app.evaluate(() => globalThis.__lockDialogCalls);
+    assert.equal(transientDialogCalls.length, 0, 'Geçici kilit (300ms) retry ile otomatik aşılmalı, diyalog açılmamalıdır');
+    const transientSavedText = fs.readFileSync(transientDoc, 'utf8');
+    assert.match(transientSavedText, /Gecici kilit metni/, 'Geçici kilit sonrası dosya başarıyla kaydedilmiş olmalıdır');
+    logPass('Geçici kilit (300ms) varyantı doğrulandı: atomicRenameWithRetry ile kayıt başarıyla tamamlandı.');
 
     passedCount++;
     results.push({ name: 'Senaryo 19: Dosya Başka Programda Açıkken Kaydetme ve Kilit Koruması', status: 'PASS' });

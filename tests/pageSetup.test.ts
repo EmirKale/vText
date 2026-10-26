@@ -40,8 +40,24 @@ function parseSectPrXml(xml: string) {
   const right = marAttrs.match(/w:right=["'](\d+)["']/i)?.[1];
   const bottom = marAttrs.match(/w:bottom=["'](\d+)["']/i)?.[1];
   const left = marAttrs.match(/w:left=["'](\d+)["']/i)?.[1];
+  const header = marAttrs.match(/w:header=["'](\d+)["']/i)?.[1];
+  const footer = marAttrs.match(/w:footer=["'](\d+)["']/i)?.[1];
+  const gutter = marAttrs.match(/w:gutter=["'](\d+)["']/i)?.[1];
 
-  return { w: Number(w), h: Number(h), orient, top: Number(top), right: Number(right), bottom: Number(bottom), left: Number(left), rawPgSz: pgSzMatch?.[0], rawPgMar: pgMarMatch?.[0] };
+  return {
+    w: Number(w),
+    h: Number(h),
+    orient,
+    top: Number(top),
+    right: Number(right),
+    bottom: Number(bottom),
+    left: Number(left),
+    header: header !== undefined ? Number(header) : undefined,
+    footer: footer !== undefined ? Number(footer) : undefined,
+    gutter: gutter !== undefined ? Number(gutter) : undefined,
+    rawPgSz: pgSzMatch?.[0],
+    rawPgMar: pgMarMatch?.[0]
+  };
 }
 
 describe('I4: Sayfa Yapısı Korunumu & w:sectPr Testleri', () => {
@@ -119,7 +135,85 @@ describe('I4: Sayfa Yapısı Korunumu & w:sectPr Testleri', () => {
       expect(outParsed.right).toBe(srcParsed.right);
       expect(outParsed.bottom).toBe(srcParsed.bottom);
       expect(outParsed.left).toBe(srcParsed.left);
+      if (srcParsed.header !== undefined) expect(outParsed.header).toBe(srcParsed.header);
+      if (srcParsed.footer !== undefined) expect(outParsed.footer).toBe(srcParsed.footer);
+      if (srcParsed.gutter !== undefined) expect(outParsed.gutter).toBe(srcParsed.gutter);
     }
+  });
+
+  it('K2 Ek Senaryo 1: w:orient yok ama w:w > w:h olan sectPr yatay olarak algılanmalı ve korunmalıdır', async () => {
+    const zip = new JSZip();
+    zip.file(
+      'word/document.xml',
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p><w:r><w:t>Oryantasyonsuz ama geniş sayfa</w:t></w:r></w:p>
+          <w:sectPr>
+            <w:pgSz w:w="16838" w:h="11906"/>
+            <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+          </w:sectPr>
+        </w:body>
+      </w:document>`
+    );
+
+    const ps = await extractPageSetupFromDocx(zip);
+    expect(ps).toBeDefined();
+    expect(ps!.orientation).toBe('landscape');
+    expect(ps!.widthDxa).toBe(16838);
+    expect(ps!.heightDxa).toBe(11906);
+
+    const dummyTipTap = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Test' }] }]
+    };
+    const exportedBuf = await exportTipTapJsonToDocx(dummyTipTap, 'Test', { pageSetup: ps });
+    const outZip = await JSZip.loadAsync(exportedBuf);
+    const outXml = await outZip.file('word/document.xml')!.async('string');
+    const outParsed = parseSectPrXml(outXml);
+
+    expect(outParsed.w).toBe(16838);
+    expect(outParsed.h).toBe(11906);
+    expect(outParsed.orient).toBe('landscape');
+  });
+
+  it('K2 Ek Senaryo 2: Letter + yatay (15840 x 12240 dxa) round-trip sonrası kaynakla eşit olmalıdır', async () => {
+    // Letter: 8.5 x 11 inç = 12240 x 15840 dxa. Yatay Letter: w:w=15840, w:h=12240, w:orient="landscape"
+    const zip = new JSZip();
+    zip.file(
+      'word/document.xml',
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p><w:r><w:t>Yatay Letter Belgesi</w:t></w:r></w:p>
+          <w:sectPr>
+            <w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>
+            <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+          </w:sectPr>
+        </w:body>
+      </w:document>`
+    );
+
+    const ps = await extractPageSetupFromDocx(zip);
+    expect(ps).toBeDefined();
+    expect(ps!.orientation).toBe('landscape');
+    expect(ps!.widthDxa).toBe(15840);
+    expect(ps!.heightDxa).toBe(12240);
+
+    const dummyTipTap = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Test' }] }]
+    };
+    const exportedBuf = await exportTipTapJsonToDocx(dummyTipTap, 'Test Letter Landscape', { pageSetup: ps });
+    const outZip = await JSZip.loadAsync(exportedBuf);
+    const outXml = await outZip.file('word/document.xml')!.async('string');
+    const outParsed = parseSectPrXml(outXml);
+
+    expect(outParsed.w).toBe(15840);
+    expect(outParsed.h).toBe(12240);
+    expect(outParsed.orient).toBe('landscape');
+    expect(outParsed.top).toBe(1440);
+    expect(outParsed.bottom).toBe(1440);
   });
 
   it('b. Yeni belge A4 dikey (11906 x 16838 dxa) ve 25,4 mm (1440 dxa) ile devam eder', async () => {

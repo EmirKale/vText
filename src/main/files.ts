@@ -630,6 +630,8 @@ export async function saveFile(
     };
   }
 
+  let isExternalOverwrite = false;
+
   // 1. PDF saveFile ile kaydedilemez
   if (entry.format === 'pdf') {
     return {
@@ -739,6 +741,7 @@ export async function saveFile(
               return saveFile(savePickerRes.docId, content, win);
             }
             // choice.response === 0: 'Üzerine yaz' -> dışarıda değiştirilen sürümün yedeğini alıp kaydetmeye devam et
+            isExternalOverwrite = true;
             backedUpPaths.delete(canonKey);
             entry.wasLastSavedByVText = false;
           }
@@ -753,7 +756,7 @@ export async function saveFile(
   // veya dış değişiklik sonrası "Üzerine yaz" seçildiğinde,
   // yazmadan ÖNCE orijinalin kopyasını aynı klasöre "Ad (vText öncesi yedek).uzantı" olarak yaz.
   // Oturum başına dosya başına bir kez; aynı adlı yedek varsa üzerine yazma (sayı ekle). COPYFILE_EXCL kullan.
-  // J6: Aynı SHA-256'lı yedek varsa yeniden kullan, gereksiz (yedek 2) üretme.
+  // J6: "Üzerine yaz" yolunda aynı SHA-256'lı yedek varsa yeniden kullan, gereksiz (yedek 2) üretme.
   let backupFileName: string | undefined;
 
   const shouldSkipBackup = entry.wasLastSavedByVText === true || backedUpPaths.has(canonKey);
@@ -772,18 +775,20 @@ export async function saveFile(
         const candidatePath = path.join(dir, candidateName);
 
         if (fs.existsSync(candidatePath)) {
-          try {
-            const existingBackupBytes = await fs.promises.readFile(candidatePath);
-            const existingSha = computeBufferSha256(existingBackupBytes);
-            const diskBytes = await fs.promises.readFile(entry.filePath);
-            const currentDiskSha = computeBufferSha256(diskBytes);
-            if (existingSha === currentDiskSha) {
-              backupSuccess = true;
-              backupFileName = candidateName;
-              backedUpPaths.add(canonKey);
-              break;
-            }
-          } catch {}
+          if (isExternalOverwrite) {
+            try {
+              const existingBackupBytes = await fs.promises.readFile(candidatePath);
+              const existingSha = computeBufferSha256(existingBackupBytes);
+              const diskBytes = await fs.promises.readFile(entry.filePath);
+              const currentDiskSha = computeBufferSha256(diskBytes);
+              if (existingSha === currentDiskSha) {
+                backupSuccess = true;
+                backupFileName = candidateName;
+                backedUpPaths.add(canonKey);
+                break;
+              }
+            } catch {}
+          }
           counter++;
           continue;
         }

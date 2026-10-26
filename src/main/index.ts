@@ -250,6 +250,7 @@ function createWindow(): void {
         `);
 
         let overallSuccess = true;
+        let turkceKarakterKorundu = true;
         let docxHeadings = 0;
         let docxParagraphs = 0;
         let mdHeadings = 0;
@@ -279,13 +280,21 @@ function createWindow(): void {
             mdParagraphs += pCount;
           } else if (ext === '.txt') {
             txtParagraphs += pCount;
+            // K5: Windows-1254 Türkçe karakter doğrulama (ş, ğ, ı, İ, ö, ü, ç)
+            const requiredChars = ['ş', 'ğ', 'ı', 'İ', 'ö', 'ü', 'ç'];
+            const allPreserved = requiredChars.every((ch) => content.includes(ch));
+            if (!allPreserved) {
+              turkceKarakterKorundu = false;
+              console.error('[SmokeTest] Türkçe karakterler korunamadı (kodlama çözücü hatası):', content);
+            }
           }
         }
 
-        // Only boolean success and number metrics are written to the marker file (no paths or strings)
+        // Only boolean success, turkceKarakterKorundu and number metrics are written to the marker file (no paths or strings)
         const payload: Record<string, boolean | number> = (openArgs.length > 0)
           ? {
-              success: overallSuccess,
+              success: overallSuccess && turkceKarakterKorundu,
+              turkceKarakterKorundu,
               docxHeadings,
               docxParagraphs,
               mdHeadings,

@@ -18,6 +18,18 @@ if (!fs.existsSync(exePath)) {
   process.exit(1);
 }
 
+// app.asar paketinde markdown-it bağımlılığının asar içinde yer aldığını doğrula
+const asarPath = path.join(path.dirname(exePath), 'resources', 'app.asar');
+if (fs.existsSync(asarPath)) {
+  const asarBuf = fs.readFileSync(asarPath);
+  const hasMarkdownItInAsar = asarBuf.includes(Buffer.from('"markdown-it":{"files":{"LICENSE"'));
+  if (!hasMarkdownItInAsar) {
+    console.error(`[Smoke Test] HATA: markdown-it paketi app.asar içinde bulunamadı (build.files ile dışlanmış)!`);
+    process.exit(1);
+  }
+  console.log(`[Smoke Test] app.asar içinde markdown-it paketi başarıyla doğrulandı.`);
+}
+
 // 1. İzole temiz userData klasörü, geçici işaret dosyası, docx, md ve txt oluştur
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vtext-smoke-user-'));
 const markerFile = path.join(os.tmpdir(), `vtext-smoke-out-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
@@ -56,10 +68,15 @@ const mdContent = `# Markdown Duman Başlığı\n\nBirinci markdown paragrafı.\
 fs.writeFileSync(tmpMd, mdContent, 'utf-8');
 console.log(`[Smoke Test] Test MD dosyası oluşturuldu: ${tmpMd}`);
 
-// TXT dosyası oluştur (kodlama çözücü / plain text import doğrulaması)
-const txtContent = `Türkçe karakterler içeren ilk paragraf: ığüşöç İĞÜŞÖÇ.\n\nİkinci düz metin paragrafı.\n`;
-fs.writeFileSync(tmpTxt, txtContent, 'utf-8');
-console.log(`[Smoke Test] Test TXT dosyası oluşturuldu: ${tmpTxt}`);
+// TXT dosyası oluştur (K5: Windows-1254 / CP1254 kodlaması ile ş, ğ, ı, İ, ö, ü, ç)
+const cp1254Bytes = Buffer.from([
+  0x54, 0xfc, 0x72, 0x6b, 0xe7, 0x65, 0x20, 0x6b, 0x61, 0x72, 0x61, 0x6b, 0x74, 0x65, 0x72, 0x6c, 0x65, 0x72, 0x3a, 0x20, // "Türkçe karakterler: "
+  0xfe, 0x20, 0xf0, 0x20, 0xfd, 0x20, 0xdd, 0x20, 0xf6, 0x20, 0xfc, 0x20, 0xe7, 0x2e, // "ş ğ ı İ ö ü ç."
+  0x0d, 0x0a, 0x0d, 0x0a,
+  0x49, 0x6b, 0x69, 0x6e, 0x63, 0x69, 0x20, 0x64, 0xfc, 0x7a, 0x20, 0x6d, 0x65, 0x74, 0x69, 0x6e, 0x20, 0x70, 0x61, 0x72, 0x61, 0x67, 0x72, 0x61, 0x66, 0xfd, 0x2e, 0x0d, 0x0a // "İkinci düz metin paragrafı.\r\n"
+]);
+fs.writeFileSync(tmpTxt, cp1254Bytes);
+console.log(`[Smoke Test] Test TXT (Windows-1254) dosyası oluşturuldu: ${tmpTxt} (${cp1254Bytes.length} bayt)`);
 
 if (fs.existsSync(markerFile)) {
   fs.unlinkSync(markerFile);
@@ -123,11 +140,11 @@ while (elapsed < maxWaitMs) {
         console.log(`[Smoke Test] BAŞARILI! İşaret dosyası ${elapsed}ms içinde yazıldı.`);
         console.log(`[Smoke Test] İşaret dosyası içeriği:`, JSON.stringify(data));
 
-        // İşaret dosyasında YALNIZCA başarı ve sayılar olmalıdır (hiçbir yol veya metin sızmamalıdır)
+        // İşaret dosyasında YALNIZCA başarı durumu, turkceKarakterKorundu ve sayılar olmalıdır (hiçbir yol veya metin sızmamalıdır)
         for (const [key, val] of Object.entries(data)) {
-          if (key === 'success') {
+          if (key === 'success' || key === 'turkceKarakterKorundu') {
             if (typeof val !== 'boolean') {
-              console.error(`[Smoke Test] HATA: success alanı boolean değil:`, typeof val);
+              console.error(`[Smoke Test] HATA: ${key} alanı boolean değil:`, typeof val);
               cleanup();
               process.exit(1);
             }
@@ -138,6 +155,12 @@ while (elapsed < maxWaitMs) {
               process.exit(1);
             }
           }
+        }
+
+        if (data.turkceKarakterKorundu !== true) {
+          console.error(`[Smoke Test] HATA: turkceKarakterKorundu false döndü (Windows-1254 karakterleri bozuldu)!`);
+          cleanup();
+          process.exit(1);
         }
 
         if (typeof data.docxHeadings !== 'number' || data.docxHeadings < 1) {

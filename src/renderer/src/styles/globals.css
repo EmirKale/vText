@@ -21,6 +21,7 @@
   --danger: 190 64 46;        /* #BE402E */
   --success: 46 122 86;       /* #2E7A56 */
   --shadow: 22 34 30;
+  --line-height: 1.4038;
   color-scheme: light;
 }
 
@@ -39,6 +40,7 @@
   --danger: 236 120 100;
   --success: 108 196 150;
   --shadow: 0 0 0;
+  --line-height: 1.4038;
   color-scheme: dark;
 }
 
@@ -167,7 +169,7 @@
   font-family: Calibri, Carlito, "Segoe UI", sans-serif;
   font-optical-sizing: auto;
   font-size: 1em;
-  line-height: 1.4;
+  line-height: var(--line-height, 1.4038);
   color: rgb(var(--ink));
   caret-color: rgb(var(--accent));
   -webkit-font-smoothing: antialiased;

@@ -543,7 +543,7 @@ describe('Grup B: Dosya Formatları ve Kodlama Testleri (B1-B6)', () => {
       { name: 'ZIP olmayan düz metin .docx', file: path.join(fixturesDir, 'corrupt-plain-text.docx') },
       { name: 'İkili .doc -> .docx', file: path.join(fixturesDir, 'corrupt-fake-doc.docx') },
       { name: 'ODT biçimi -> .docx', file: path.join(fixturesDir, 'corrupt-fake-odt.docx') },
-      { name: '~$ kilit dosyası', file: path.join(fixturesDir, '~$corrupt-lock.docx') },
+      { name: '~$ kilit dosyası', file: path.join(fixturesDir, 'fixture-owner-lock.docx') },
       { name: 'Bozuk (kesik) ZIP', file: path.join(fixturesDir, 'corrupt-truncated.docx') }
     ];
 

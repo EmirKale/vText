@@ -68,9 +68,15 @@ export const TYPOGRAPHY = {
       return Math.round(this.paragraphAfterPt * 20);
     },
     // cssLineHeight = wordLineMultiple * (ascent+descent+lineGap)/unitsPerEm
-    // 1.15 * 1.220703125 = 1.4038... -> 1.4
+    // 1.15 * 1.220703125 = 1.40380859375
+    get cssLineHeight(): number {
+      return this.wordLineMultiple * this.fontNaturalMultiplier;
+    },
+    get fontNaturalMultiplier(): number {
+      return (1536 + 512 + 452) / 2048;
+    },
     get lineHeight(): number {
-      return Math.round(this.wordLineMultiple * ((1536 + 512 + 452) / 2048) * 10) / 10;
+      return Math.round(this.cssLineHeight * 10) / 10;
     },
     spaceAfterEm: '0.5em',
     colorHex: '1C2523'

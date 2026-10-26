@@ -18,6 +18,7 @@ import { exportTipTapJsonToDocx } from './io/docxExport';
 import { tipTapJsonToMarkdown } from './io/markdown';
 import { tipTapJsonToPlainText } from './io/plainText';
 import { applyTheme } from './lib/theme';
+import { TYPOGRAPHY } from '../../shared/typography';
 import { X } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -59,6 +60,7 @@ export const App: React.FC = () => {
 
   // Initialize settings and open-file listener
   useEffect(() => {
+    document.documentElement.style.setProperty('--line-height', String(TYPOGRAPHY.body.cssLineHeight));
     if (window.kalem) {
       window.kalem.settings.get().then((loaded) => {
         updateSettings(loaded);
